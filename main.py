@@ -96,11 +96,13 @@ def summarize_with_upstage(text_content, image_paths=None):
     if image_paths:
         print(f"Note: Found {len(image_paths)} images. Images will be saved but not included in summarization for now.")
     
-    # Prepare the prompt
-    prompt = f"""Please provide a concise summary of the following document. 
-    Focus on the main points, key findings, and important details.
+    # Prepare the prompt in Korean
+    prompt = f"""다음 문서를 한국어로 자세히 요약해주세요. 
+    - 주요 포인트, 핵심 주장, 중요한 세부 사항을 포함해주세요.
+    - 명확하고 구조화된 형식으로 작성해주세요.
+    - 문서에 이미지가 있는 경우 별도로 추출되어 저장되었습니다.
     
-    Document:
+    문서 내용:
     {text_content}
     """
 
@@ -109,15 +111,15 @@ def summarize_with_upstage(text_content, image_paths=None):
         "messages": [
             {
                 "role": "system",
-                "content": "You are a helpful assistant that provides clear and concise summaries of documents. Focus on the main points and key information."
+                "content": "당신은 문서를 명확하고 구조화된 형식으로 요약해주는 도우미입니다. 한국어로 답변해주세요."
             },
             {
                 "role": "user",
                 "content": prompt
             }
         ],
-        "max_tokens": 1000,  # Increase if you need longer summaries
-        "temperature": 0.3,  # Lower temperature for more focused and deterministic output
+        "max_tokens": 1000,  # 필요에 따라 조정 가능
+        "temperature": 0.3,  # 더 일관된 출력을 위한 낮은 온도
         "stream": False
     }
 
