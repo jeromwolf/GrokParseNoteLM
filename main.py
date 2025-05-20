@@ -47,10 +47,8 @@ def extract_text_and_images_from_pdf(pdf_path, output_image_dir):
     doc = fitz.open(pdf_path)
     full_text = ""
     image_paths = []
-
-    # Ensure the specific output directory for this PDF exists
-    if not os.path.exists(output_image_dir):
-        os.makedirs(output_image_dir)
+    
+    # The output_image_dir should already be created by the caller
 
     for page_num in range(len(doc)):
         page = doc.load_page(page_num)
@@ -140,13 +138,20 @@ def process_pdf(pdf_path):
     """Process a PDF file: extract text and images, then summarize the text."""
     print(f"Processing PDF: {pdf_path}...")
     
-    # Create a timestamped output directory for this specific PDF run
-    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    # Create output directory if it doesn't exist
+    os.makedirs("output", exist_ok=True)
+    
+    # Create a timestamped subdirectory for this specific PDF run
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     pdf_basename = os.path.splitext(os.path.basename(pdf_path))[0]
     pdf_specific_output_dir = os.path.join("output", f"{pdf_basename}_{timestamp}")
     
-    # Create the output directory if it doesn't exist
+    # Create the specific output directory for this run
     os.makedirs(pdf_specific_output_dir, exist_ok=True)
+    
+    # Create an images subdirectory for extracted images
+    images_dir = os.path.join(pdf_specific_output_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
     
     try:
         # Extract text and images
@@ -174,11 +179,9 @@ def process_pdf(pdf_path):
         
         return summary
     
-    finally:
-        # Clean up temporary image directory for this specific PDF run
-        if os.path.exists(pdf_specific_output_dir):
-            print(f"Cleaning up temporary image directory: {pdf_specific_output_dir}")
-            shutil.rmtree(pdf_specific_output_dir)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return f"Error processing PDF: {e}"
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Summarize a PDF document using Upstage Solar API.")
