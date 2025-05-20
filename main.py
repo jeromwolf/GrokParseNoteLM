@@ -1,10 +1,11 @@
 import os
 import argparse
 import json
+import base64
 from datetime import datetime
 from typing import List, Optional, Tuple
 from dotenv import load_dotenv
-import fitz  # PyMuPDF
+from document_processor import extract_text_and_images_from_pdf  # 업스테이지 Document Parser 사용
 from model_handler import ModelHandler
 
 # 환경 변수 로드
@@ -31,79 +32,6 @@ def image_to_base64(image_path: str) -> str:
     except Exception as e:
         print(f"Error encoding image {image_path}: {e}")
         return None
-
-def extract_text_and_images_from_pdf(pdf_path: str, output_dir: str) -> Tuple[str, List[str]]:
-    """PDF 파일에서 텍스트와 이미지를 추출합니다.
-    
-    Args:
-        pdf_path: PDF 파일 경로
-        output_dir: 추출된 이미지를 저장할 디렉토리
-        
-    Returns:
-        (추출된_텍스트, 이미지_경로_리스트) 튜플
-    """
-    text = ""
-    image_paths = []
-    
-    # 이미지 저장 디렉토리 생성
-    images_dir = os.path.join(output_dir, "images")
-    os.makedirs(images_dir, exist_ok=True)
-    
-    try:
-        # PDF 열기
-        doc = fitz.open(pdf_path)
-        
-        # 각 페이지에서 텍스트 추출
-        for page_num in range(len(doc)):
-            page = doc.load_page(page_num)
-            text += page.get_text() + "\n\n"
-            
-            # 이미지 추출
-            image_list = page.get_images(full=True)
-            for img_index, img in enumerate(image_list):
-                xref = img[0]
-                base_image = doc.extract_image(xref)
-                image_bytes = base_image["image"]
-                
-                # 이미지 저장
-                image_ext = base_image["ext"]
-                image_filename = f"page_{page_num + 1}_img_{img_index + 1}.{image_ext}"
-                image_path = os.path.join(images_dir, image_filename)
-                
-                with open(image_path, "wb") as f:
-                    f.write(image_bytes)
-                
-                image_paths.append(image_path)
-        
-        return text.strip(), image_paths
-    except Exception as e:
-        print(f"PDF에서 텍스트와 이미지 추출 중 오류 발생: {str(e)}")
-        return "", []
-    doc = fitz.open(pdf_path)
-    full_text = ""
-    image_paths = []
-    
-    # The output_image_dir should already be created by the caller
-
-    for page_num in range(len(doc)):
-        page = doc.load_page(page_num)
-        full_text += page.get_text() + "\n\n"
-        
-        image_list = page.get_images(full=True)
-        for img_index, img_info in enumerate(image_list):
-            xref = img_info[0]
-            base_image = doc.extract_image(xref)
-            image_bytes = base_image["image"]
-            image_ext = base_image["ext"]
-            image_filename = f"page{page_num+1}_img{img_index+1}.{image_ext}"
-            image_save_path = os.path.join(output_image_dir, image_filename)
-            
-            with open(image_save_path, "wb") as img_file:
-                img_file.write(image_bytes)
-            image_paths.append(image_save_path)
-            
-    doc.close()
-    return full_text, image_paths
 
 
     """Base class for model handlers."""
@@ -309,53 +237,8 @@ def extract_text_and_images_from_pdf(pdf_path: str, output_dir: str) -> Tuple[st
 
 # --- Main Execution ---
 
-def extract_text_and_images_from_pdf(pdf_path: str, output_dir: str) -> Tuple[str, List[str]]:
-    """Extract text and images from a PDF file.
-    
-    Args:
-        pdf_path: Path to the PDF file
-        output_dir: Directory to save extracted images
-        
-    Returns:
-        Tuple containing (extracted_text, list_of_image_paths)
-    """
-    text = ""
-    image_paths = []
-    
-    # Create images directory if it doesn't exist
-    images_dir = os.path.join(output_dir, "images")
-    os.makedirs(images_dir, exist_ok=True)
-    
-    try:
-        # Open the PDF
-        doc = fitz.open(pdf_path)
-        
-        # Extract text from each page
-        for page_num in range(len(doc)):
-            page = doc.load_page(page_num)
-            text += page.get_text() + "\n\n"
-            
-            # Extract images
-            image_list = page.get_images(full=True)
-            for img_index, img in enumerate(image_list):
-                xref = img[0]
-                base_image = doc.extract_image(xref)
-                image_bytes = base_image["image"]
-                
-                # Save the image
-                image_ext = base_image["ext"]
-                image_filename = f"page_{page_num + 1}_img_{img_index + 1}.{image_ext}"
-                image_path = os.path.join(images_dir, image_filename)
-                
-                with open(image_path, "wb") as f:
-                    f.write(image_bytes)
-                
-                image_paths.append(image_path)
-        
-        return text.strip(), image_paths
-    except Exception as e:
-        print(f"Error extracting text and images from PDF: {str(e)}")
-        return "", []
+# extract_text_and_images_from_pdf 함수는 document_processor.py에서 가져옴
+# 업스테이지 Document Parser API를 사용하여 PDF에서 텍스트와 이미지를 추출
 
 def process_pdf(pdf_path: str, model_type: str, output_dir: str = "output", model_name: Optional[str] = None) -> str:
     """Process a PDF file and generate a summary using the specified model.

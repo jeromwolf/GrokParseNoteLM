@@ -30,8 +30,8 @@ GrokParseNoteLM은 다양한 AI 모델을 활용한 PDF 문서 파싱 및 요약
 
 ### ✨ 주요 기능
 - **PDF 파싱**
-  - PyMuPDF를 활용한 고성능 PDF 텍스트 및 이미지 추출
-  - 긴 문서 자동 분할 처리
+  - 업스테이지 Document Parser API를 활용한 고정확도 PDF 텍스트 및 이미지 추출
+  - 빠른 처리 속도와 정확한 문서 구조 분석
 - **다중 AI 모델 지원**
   - OpenAI (GPT-4 Turbo): 상세하고 구조화된 한국어 요약
   - Llama (llama3): 로컬에서 실행되는 빠른 한국어 요약
@@ -42,14 +42,14 @@ GrokParseNoteLM은 다양한 AI 모델을 활용한 PDF 문서 파싱 및 요약
 
 ## 🛠️ 기술 스택
 - **백엔드**: Python
-- **PDF 처리**: PyMuPDF (fitz)
+- **PDF 처리**: 업스테이지 Document Parser API
 - **AI 모델**:
   - OpenAI API (GPT-4 Turbo)
   - Ollama API (Llama3)
   - Upstage API (Solar)
   - Google Gemini API
 - **이미지 처리**: MCP 이미지 리더 (개발 중)
-- **추가 라이브러리**: requests, os, datetime
+- **추가 라이브러리**: requests, os, datetime, dotenv
 
 ## 📋 사용 방법
 
