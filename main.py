@@ -1,47 +1,28 @@
 import os
-import fitz  # PyMuPDF
-import base64
-import requests
 import argparse
-import shutil
-from PIL import Image
-from io import BytesIO
+import json
+from datetime import datetime
+from typing import List, Optional, Tuple
 from dotenv import load_dotenv
-import datetime
-from typing import List, Tuple, Optional
-from pathlib import Path
+import fitz  # PyMuPDF
+from model_handler import ModelHandler
 
-# Try to import llama-cpp-python, but make it optional
-try:
-    from llama_cpp import Llama
-    LLAMA_AVAILABLE = True
-except ImportError:
-    LLAMA_AVAILABLE = False
-
-# Load environment variables from .env file
+# 환경 변수 로드
 load_dotenv()
-
-UPSTAGE_API_KEY = os.getenv("UPSTAGE_API_KEY")
-UPSTAGE_API_URL = "https://api.upstage.ai/v1/chat/completions"
 
 # --- Helper Functions ---
 
-def get_image_mime_type(image_path):
-    """Determine image MIME type from file extension."""
+def get_image_mime_type(image_path: str) -> str:
+    """이미지 파일의 MIME 타입을 반환합니다."""
     ext = os.path.splitext(image_path)[1].lower()
     if ext == ".png":
         return "image/png"
     elif ext in [".jpg", ".jpeg"]:
         return "image/jpeg"
-    elif ext == ".gif":
-        return "image/gif"
-    elif ext == ".bmp":
-        return "image/bmp"
-    # Add more types if needed
-    return "application/octet-stream" # Default if unknown
+    return "application/octet-stream"
 
-def image_to_base64(image_path):
-    """Convert an image file to a base64 encoded string."""
+def image_to_base64(image_path: str) -> str:
+    """이미지 파일을 base64 문자열로 변환합니다."""
     try:
         with open(image_path, "rb") as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
@@ -51,8 +32,53 @@ def image_to_base64(image_path):
         print(f"Error encoding image {image_path}: {e}")
         return None
 
-def extract_text_and_images_from_pdf(pdf_path, output_image_dir):
-    """Extracts text and images from a PDF file into the specified directory."""
+def extract_text_and_images_from_pdf(pdf_path: str, output_dir: str) -> Tuple[str, List[str]]:
+    """PDF 파일에서 텍스트와 이미지를 추출합니다.
+    
+    Args:
+        pdf_path: PDF 파일 경로
+        output_dir: 추출된 이미지를 저장할 디렉토리
+        
+    Returns:
+        (추출된_텍스트, 이미지_경로_리스트) 튜플
+    """
+    text = ""
+    image_paths = []
+    
+    # 이미지 저장 디렉토리 생성
+    images_dir = os.path.join(output_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+    
+    try:
+        # PDF 열기
+        doc = fitz.open(pdf_path)
+        
+        # 각 페이지에서 텍스트 추출
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            text += page.get_text() + "\n\n"
+            
+            # 이미지 추출
+            image_list = page.get_images(full=True)
+            for img_index, img in enumerate(image_list):
+                xref = img[0]
+                base_image = doc.extract_image(xref)
+                image_bytes = base_image["image"]
+                
+                # 이미지 저장
+                image_ext = base_image["ext"]
+                image_filename = f"page_{page_num + 1}_img_{img_index + 1}.{image_ext}"
+                image_path = os.path.join(images_dir, image_filename)
+                
+                with open(image_path, "wb") as f:
+                    f.write(image_bytes)
+                
+                image_paths.append(image_path)
+        
+        return text.strip(), image_paths
+    except Exception as e:
+        print(f"PDF에서 텍스트와 이미지 추출 중 오류 발생: {str(e)}")
+        return "", []
     doc = fitz.open(pdf_path)
     full_text = ""
     image_paths = []
@@ -79,13 +105,16 @@ def extract_text_and_images_from_pdf(pdf_path, output_image_dir):
     doc.close()
     return full_text, image_paths
 
-class ModelHandler:
+
     """Base class for model handlers."""
-    def summarize(self, text: str, image_paths: List[str] = None) -> str:
-        raise NotImplementedError("Subclasses must implement this method")
+    def __init__(self, model_type, model_name=None):
+        self.model_type = model_type
+        self.model_name = model_name
 
 
-class UpstageHandler(ModelHandler):
+
+
+
     """Handler for Upstage Solar API."""
     def __init__(self):
         if not UPSTAGE_API_KEY:
@@ -96,7 +125,7 @@ class UpstageHandler(ModelHandler):
             "Content-Type": "application/json"
         }
     
-    def summarize(self, text: str, image_paths: List[str] = None) -> str:
+    def generate_summary(self, text: str, image_paths: List[str] = None) -> str:
         """Summarize text using Upstage Solar API."""
         if image_paths:
             print(f"Note: Found {len(image_paths)} images. Images will be saved but not included in summarization for now.")
@@ -139,160 +168,294 @@ class UpstageHandler(ModelHandler):
             return f"API 요청 중 오류가 발생했습니다: {str(e)}"
 
 
-class LlamaHandler(ModelHandler):
-    """Handler for local Llama model."""
-    def __init__(self, model_path: str = None):
-        if not LLAMA_AVAILABLE:
-            raise ImportError("llama-cpp-python is not installed. Please install it with: pip install llama-cpp-python")
+
+    """Handler for local Llama model using Ollama API."""
+    def __init__(self, model_name: str = "llama3"):
+        self.model_name = model_name
+        self.api_url = "http://localhost:11434/api/generate"
         
-        # Default model path if not provided
-        self.model_path = model_path or os.path.expanduser("~/.cache/llama_models/llama-2-7b-chat.Q4_K_M.gguf")
+        # Test if Ollama is running
+        try:
+            response = requests.get("http://localhost:11434/api/tags")
+            if response.status_code != 200:
+                raise ConnectionError("Ollama 서버에 연결할 수 없습니다. Ollama가 실행 중인지 확인해주세요.")
+        except requests.exceptions.RequestException as e:
+            raise ConnectionError(f"Ollama 서버에 연결할 수 없습니다: {str(e)}")
         
-        # Download model if it doesn't exist
-        if not os.path.exists(self.model_path):
-            print(f"Model not found at {self.model_path}")
-            print("Please download the model first or specify the correct path with --model-path")
-            print("Example model: https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_K_M.gguf")
-            raise FileNotFoundError(f"Model not found at {self.model_path}")
-        
-        # Initialize Llama model
-        self.llm = Llama(
-            model_path=self.model_path,
-            n_ctx=2048,  # Context window
-            n_threads=4   # Number of CPU threads to use
-        )
+        # Check if the model is available
+        available_models = [m["name"] for m in response.json().get("models", [])]
+        if self.model_name not in available_models:
+            print(f"경고: 모델 '{self.model_name}'이(가) 로컬에 없습니다. 사용 가능한 모델: {', '.join(available_models)}")
+            print(f"다음 명령어로 모델을 다운로드할 수 있습니다: ollama pull {self.model_name}")
+            self.model_name = available_models[0] if available_models else "llama3"
+            print(f"기본 모델 '{self.model_name}'을(를) 사용합니다.")
     
-    def summarize(self, text: str, image_paths: List[str] = None) -> str:
-        """Summarize text using local Llama model."""
+    def generate_summary(self, text: str, image_paths: List[str] = None) -> str:
+        """Summarize text using local Llama model via Ollama API."""
         if image_paths:
             print(f"Note: Found {len(image_paths)} images. Image analysis is not yet implemented for Llama.")
         
+        # Simple prompt with Korean instruction
         prompt = f"""[INST] <<SYS>>
-        당신은 문서를 명확하고 구조화된 형식으로 요약해주는 도우미입니다. 한국어로 답변해주세요.
+        당신은 문서를 명확하고 구조화된 형식으로 요약해주는 도우미입니다. 반드시 한국어로만 답변해주세요.
         <</SYS>>
         
         다음 문서를 한국어로 자세히 요약해주세요. 주요 포인트, 핵심 주장, 중요한 세부 사항을 포함해주세요.
         
         문서 내용:
         {text}
-        [/INST]"""
+        
+        한국어로 요약: [/INST]"""
         
         try:
-            output = self.llm(
-                prompt,
-                max_tokens=1000,
-                temperature=0.3,
-                stop=["</s>", "[INST]"]
+            response = requests.post(
+                self.api_url,
+                json={
+                    "model": self.model_name,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.3,
+                        "max_tokens": 1000,
+                        "stop": ["</s>", "[INST]", "<|eot_id|>"]
+                    }
+                }
             )
-            return output["choices"][0]["text"]
+            response.raise_for_status()
+            return response.json().get("response", "요약을 생성할 수 없었습니다.")
         except Exception as e:
-            return f"Llama 모델 요약 중 오류가 발생했습니다: {str(e)}"
+            return f"Ollama API 요청 중 오류가 발생했습니다: {str(e)}"
+
+
+
+    """Handler for OpenAI API."""
+    def __init__(self, model_name: str = "text-davinci-003"):
+        self.model_name = model_name
+        self.api_url = "https://api.openai.com/v1/completions"
+        self.headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json"
+        }
+    
+    def generate_summary(self, text: str, image_paths: List[str] = None) -> str:
+        """Summarize text using OpenAI API."""
+        if image_paths:
+            print(f"Note: Found {len(image_paths)} images. Images will be saved but not included in summarization for now.")
+        
+        prompt = f"""Summarize the following text in Korean:
+        
+        {text}
+        """
+        
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "max_tokens": 1000,
+            "temperature": 0.3,
+            "stream": False
+        }
+
+        try:
+            response = requests.post(
+                self.api_url,
+                headers=self.headers,
+                json=payload
+            )
+            response.raise_for_status()
+            return response.json()["choices"][0]["text"]
+        except Exception as e:
+            return f"API 요청 중 오류가 발생했습니다: {str(e)}"
+
+
+
+    """Handler for Gemini API."""
+    def __init__(self, model_name: str = "llama"):
+        self.model_name = model_name
+        self.api_url = "https://api.gemini.ai/v1/completions"
+        self.headers = {
+            "Authorization": f"Bearer {GEMINI_API_KEY}",
+            "Content-Type": "application/json"
+        }
+    
+    def generate_summary(self, text: str, image_paths: List[str] = None) -> str:
+        """Summarize text using Gemini API."""
+        if image_paths:
+            print(f"Note: Found {len(image_paths)} images. Images will be saved but not included in summarization for now.")
+        
+        prompt = f"""Summarize the following text in Korean:
+        
+        {text}
+        """
+        
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "max_tokens": 1000,
+            "temperature": 0.3,
+            "stream": False
+        }
+
+        try:
+            response = requests.post(
+                self.api_url,
+                headers=self.headers,
+                json=payload
+            )
+            response.raise_for_status()
+            return response.json()["choices"][0]["text"]
+        except Exception as e:
+            return f"API 요청 중 오류가 발생했습니다: {str(e)}"
 
 
 # --- Main Execution ---
 
-def process_pdf(pdf_path: str, model_type: str = "upstage", model_path: str = None) -> str:
-    """
-    Process a PDF file: extract text and images, then summarize the text.
+def extract_text_and_images_from_pdf(pdf_path: str, output_dir: str) -> Tuple[str, List[str]]:
+    """Extract text and images from a PDF file.
     
     Args:
         pdf_path: Path to the PDF file
-        model_type: Type of model to use ('upstage' or 'llama')
-        model_path: Path to the Llama model (only used when model_type is 'llama')
+        output_dir: Directory to save extracted images
+        
+    Returns:
+        Tuple containing (extracted_text, list_of_image_paths)
     """
-    print(f"Processing PDF: {pdf_path}")
-    print(f"Using model: {model_type.upper()}")
+    text = ""
+    image_paths = []
     
-    # Create output directory if it doesn't exist
-    os.makedirs("output", exist_ok=True)
-    
-    # Create a timestamped subdirectory for this specific PDF run
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    pdf_basename = os.path.splitext(os.path.basename(pdf_path))[0]
-    pdf_specific_output_dir = os.path.join("output", f"{pdf_basename}_{timestamp}")
-    
-    # Create the specific output directory for this run
-    os.makedirs(pdf_specific_output_dir, exist_ok=True)
-    
-    # Create an images subdirectory for extracted images
-    images_dir = os.path.join(pdf_specific_output_dir, "images")
+    # Create images directory if it doesn't exist
+    images_dir = os.path.join(output_dir, "images")
     os.makedirs(images_dir, exist_ok=True)
     
     try:
-        # Initialize the appropriate model handler
-        if model_type.lower() == "llama":
-            model = LlamaHandler(model_path)
-            print("Using local Llama model for summarization")
-        else:  # Default to Upstage
-            model = UpstageHandler()
-            print("Using Upstage Solar API for summarization")
+        # Open the PDF
+        doc = fitz.open(pdf_path)
         
-        # Extract text and images
-        print(f"Extracting text and images from PDF...")
-        text_content, image_paths = extract_text_and_images_from_pdf(pdf_path, images_dir)
+        # Extract text from each page
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            text += page.get_text() + "\n\n"
+            
+            # Extract images
+            image_list = page.get_images(full=True)
+            for img_index, img in enumerate(image_list):
+                xref = img[0]
+                base_image = doc.extract_image(xref)
+                image_bytes = base_image["image"]
+                
+                # Save the image
+                image_ext = base_image["ext"]
+                image_filename = f"page_{page_num + 1}_img_{img_index + 1}.{image_ext}"
+                image_path = os.path.join(images_dir, image_filename)
+                
+                with open(image_path, "wb") as f:
+                    f.write(image_bytes)
+                
+                image_paths.append(image_path)
         
-        if not text_content.strip():
-            error_msg = "Warning: No text content was extracted from the PDF."
+        return text.strip(), image_paths
+    except Exception as e:
+        print(f"Error extracting text and images from PDF: {str(e)}")
+        return "", []
+
+def process_pdf(pdf_path: str, model_type: str, output_dir: str = "output", model_name: Optional[str] = None) -> str:
+    """Process a PDF file and generate a summary using the specified model.
+    
+    Args:
+        pdf_path: Path to the PDF file
+        model_type: Type of model to use ('upstage', 'llama', 'openai', 'gemini')
+        output_dir: Directory to save output files
+        model_name: Specific model name/version to use
+        
+    Returns:
+        Generated summary text
+    """
+    # Create output directory with timestamp and model name
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
+    pdf_specific_output_dir = os.path.join(output_dir, f"{pdf_name}_{model_type.upper()}_{timestamp}")
+    
+    try:
+        # 반드시 ModelHandler만 사용하도록 고정
+        handler = ModelHandler(model_type, model_name)
+        
+        # Extract text and images from PDF
+        print(f"Extracting text and images from {os.path.basename(pdf_path)}...")
+        text, image_paths = extract_text_and_images_from_pdf(pdf_path, pdf_specific_output_dir)
+        
+        if not text.strip():
+            error_msg = "Error: No text content was extracted from the PDF."
             print(error_msg)
             return error_msg
         
-        # Summarize the text content
+        # Generate summary
         print("\nGenerating summary...")
-        summary = model.summarize(text_content, image_paths)
+        summary = handler.generate_summary(text, image_paths)
         
-        # Print the summary
+        # Print summary to console
         print("\n--- Summary ---")
         print(summary)
         print("----------------")
         
-        # Save the summary to a file
-        summary_file = os.path.join(pdf_specific_output_dir, "summary.txt")
-        with open(summary_file, 'w', encoding='utf-8') as f:
+        # Save summary to file
+        os.makedirs(pdf_specific_output_dir, exist_ok=True)
+        summary_path = os.path.join(pdf_specific_output_dir, "summary.txt")
+        with open(summary_path, 'w', encoding='utf-8') as f:
             f.write(summary)
-        print(f"\nSummary saved to: {summary_file}")
+        print(f"\nSummary saved to: {summary_path}")
         
         # Save model info
-        with open(os.path.join(pdf_specific_output_dir, "model_info.txt"), 'w') as f:
+        with open(os.path.join(pdf_specific_output_dir, "model_info.txt"), 'w', encoding='utf-8') as f:
             f.write(f"Model: {model_type.upper()}\n")
-            if model_type.lower() == "llama":
-                f.write(f"Model path: {model_path or 'default'}\n")
+            if model_name:
+                f.write(f"Model name: {model_name}\n")
         
         return summary
+        
     
     except Exception as e:
         error_msg = f"An error occurred: {str(e)}"
         print(f"\n{error_msg}")
         return error_msg
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Summarize a PDF document using different AI models.")
-    parser.add_argument("pdf_file", help="Path to the PDF file to summarize.")
-    parser.add_argument(
-        "--model", 
-        type=str, 
-        choices=["upstage", "llama"], 
-        default="upstage",
-        help="Model to use for summarization (default: upstage)"
-    )
-    parser.add_argument(
-        "--model-path",
-        type=str,
-        default=None,
-        help="Path to the Llama model file (only used when --model=llama)"
-    )
+def main():
+    parser = argparse.ArgumentParser(description='Process a PDF and generate a summary using different AI models.')
+    parser.add_argument('pdf_path', type=str, help='Path to the PDF file to process')
+    parser.add_argument('--model', type=str, default='upstage',
+                      choices=['upstage', 'llama', 'openai', 'gemini'],
+                      help='Model to use for summarization (default: upstage)')
+    parser.add_argument('--model-name', type=str, default=None,
+                      help='Specific model name/version (e.g., gpt-4-turbo-preview for OpenAI, gemini-pro for Gemini, llama3:latest for Ollama)')
+    parser.add_argument('--output-dir', type=str, default='output',
+                      help='Directory to save output files (default: output)')
     
     args = parser.parse_args()
-
-    if not os.path.exists(args.pdf_file):
-        print(f"Error: PDF file not found at {args.pdf_file}")
+    
+    # Set default model names if not provided
+    if not args.model_name:
+        if args.model == 'openai':
+            args.model_name = 'gpt-4-turbo-preview'
+        elif args.model == 'gemini':
+            args.model_name = 'gemini-pro'
+        elif args.model == 'llama':
+            args.model_name = 'llama3:latest'
+    
+    # Process the PDF
+    if not os.path.exists(args.pdf_path):
+        print(f"Error: PDF file not found at {args.pdf_path}")
         exit(1)
     
     print("=" * 40)
-    print(f"PDF Document: {os.path.basename(args.pdf_file)}")
+    print(f"PDF Document: {os.path.basename(args.pdf_path)}")
     print(f"Model: {args.model.upper()}")
-    if args.model == "llama" and args.model_path:
-        print(f"Custom model path: {args.model_path}")
+    if args.model_name:
+        print(f"Model name: {args.model_name}")
     print("=" * 40 + "\n")
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(args.output_dir, exist_ok=True)
+    
+    process_pdf(args.pdf_path, args.model, args.output_dir, args.model_name)
 
-    process_pdf(args.pdf_file, args.model, args.model_path)
+if __name__ == "__main__":
+    main()
     print("\nProcessing complete.")
