@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import List, Optional, Tuple
 from dotenv import load_dotenv
 from document_processor import extract_text_and_images_from_pdf  # 업스테이지 Document Parser 사용
+from pymupdf_processor import extract_text_and_images_from_pdf as extract_with_pymupdf  # PyMuPDF 백업 방법
 from model_handler import ModelHandler
 
 # 환경 변수 로드
@@ -240,7 +241,7 @@ def image_to_base64(image_path: str) -> str:
 # extract_text_and_images_from_pdf 함수는 document_processor.py에서 가져옴
 # 업스테이지 Document Parser API를 사용하여 PDF에서 텍스트와 이미지를 추출
 
-def process_pdf(pdf_path: str, model_type: str, output_dir: str = "output", model_name: Optional[str] = None) -> str:
+def process_pdf(pdf_path: str, model_type: str, output_dir: str = "output", model_name: Optional[str] = None, parser: str = "auto", language: str = "ko") -> str:
     """Process a PDF file and generate a summary using the specified model.
     
     Args:
@@ -257,47 +258,136 @@ def process_pdf(pdf_path: str, model_type: str, output_dir: str = "output", mode
     pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
     pdf_specific_output_dir = os.path.join(output_dir, f"{pdf_name}_{model_type.upper()}_{timestamp}")
     
+    # 로그 디렉토리 생성
+    os.makedirs(pdf_specific_output_dir, exist_ok=True)
+    log_file = os.path.join(pdf_specific_output_dir, "process_log.txt")
+    
+    # 로그 함수 정의
+    def log_message(message: str):
+        print(message)
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {message}\n")
+    
     try:
         # 반드시 ModelHandler만 사용하도록 고정
-        handler = ModelHandler(model_type, model_name)
+        handler = ModelHandler(model_type, model_name, language)
         
         # Extract text and images from PDF
-        print(f"Extracting text and images from {os.path.basename(pdf_path)}...")
-        text, image_paths = extract_text_and_images_from_pdf(pdf_path, pdf_specific_output_dir)
+        log_message(f"PDF 파일 처리 시작: {os.path.basename(pdf_path)}")
+        log_message(f"모델: {model_type.upper()}{' - ' + model_name if model_name else ''}")
+        log_message(f"언어: {language}")
+        log_message(f"파서 모드: {parser}")
+        
+        parser_used = ""  # 실제 사용된 파서 정보를 저장할 변수
+        
+        # 파서 선택 로직
+        if parser == "pymupdf" or parser == "local":
+            # PyMuPDF 직접 사용
+            log_message("PyMuPDF 파서를 사용하여 PDF 처리 중...")
+            text, image_paths = extract_with_pymupdf(pdf_path, pdf_specific_output_dir)
+            parser_used = "PyMuPDF"  # 파서 정보 업데이트
+        elif parser == "upstage" or parser == "api":
+            # 업스테이지 API 직접 사용
+            log_message("업스테이지 Document Parser API를 사용하여 PDF 처리 중...")
+            try:
+                text, image_paths = extract_text_and_images_from_pdf(pdf_path, pdf_specific_output_dir)
+                parser_used = "Upstage Document Parser API"  # 파서 정보 업데이트
+                if not text.strip():
+                    log_message("⚠️ 경고: 업스테이지 API에서 텍스트가 추출되지 않았습니다.")
+                    raise ValueError("업스테이지 API에서 텍스트가 추출되지 않았습니다.")
+            except Exception as e:
+                log_message(f"❌ 오류: 업스테이지 API 실패: {str(e)}")
+                raise e  # 오류를 다시 발생시켜 자동 전환 없이 종료
+        else:  # auto 모드 (기본값)
+            # 먼저 업스테이지 API 시도, 실패 시 PyMuPDF로 자동 전환
+            log_message("업스테이지 Document Parser API를 사용하여 PDF 처리 중... (실패 시 PyMuPDF로 자동 전환)")
+            try:
+                # 업스테이지 Document Parser API 시도
+                text, image_paths = extract_text_and_images_from_pdf(pdf_path, pdf_specific_output_dir)
+                parser_used = "Upstage Document Parser API"  # 파서 정보 업데이트
+                
+                # 텍스트가 추출되지 않았다면 PyMuPDF로 대체
+                if not text.strip():
+                    log_message("⚠️ 경고: 업스테이지 API에서 텍스트를 추출하지 못했습니다. PyMuPDF로 전환합니다...")
+                    text, image_paths = extract_with_pymupdf(pdf_path, pdf_specific_output_dir)
+                    parser_used = "PyMuPDF"  # 파서 정보 업데이트
+            except Exception as e:
+                log_message(f"❌ 오류: 업스테이지 API 실패: {str(e)}. PyMuPDF로 전환합니다...")
+                text, image_paths = extract_with_pymupdf(pdf_path, pdf_specific_output_dir)
+                parser_used = "PyMuPDF"  # 파서 정보 업데이트
         
         if not text.strip():
-            error_msg = "Error: No text content was extracted from the PDF."
-            print(error_msg)
+            error_msg = "❌ 오류: PDF에서 텍스트를 추출하지 못했습니다."
+            log_message(error_msg)
             return error_msg
         
+        log_message(f"추출된 텍스트 길이: {len(text)} 자")
+        log_message(f"추출된 이미지 수: {len(image_paths)}개")
+        log_message(f"사용된 파서: {parser_used}")
+        
         # Generate summary
-        print("\nGenerating summary...")
+        log_message(f"\n{language} 언어로 요약 생성 중... (모델: {model_type.upper()}{' - ' + model_name if model_name else ''})")
         summary = handler.generate_summary(text, image_paths)
         
         # Print summary to console
-        print("\n--- Summary ---")
+        log_message("\n--- Summary ---")
         print(summary)
-        print("----------------")
+        log_message("----------------")
         
         # Save summary to file
-        os.makedirs(pdf_specific_output_dir, exist_ok=True)
         summary_path = os.path.join(pdf_specific_output_dir, "summary.txt")
         with open(summary_path, 'w', encoding='utf-8') as f:
             f.write(summary)
-        print(f"\nSummary saved to: {summary_path}")
+        log_message(f"\n요약 저장 완료: {summary_path}")
         
-        # Save model info
-        with open(os.path.join(pdf_specific_output_dir, "model_info.txt"), 'w', encoding='utf-8') as f:
-            f.write(f"Model: {model_type.upper()}\n")
-            if model_name:
-                f.write(f"Model name: {model_name}\n")
+        # Save model and parser info
+        info_path = os.path.join(pdf_specific_output_dir, "process_info.json")
+        info = {
+            "timestamp": timestamp,
+            "pdf_file": os.path.basename(pdf_path),
+            "model": {
+                "type": model_type.upper(),
+                "name": model_name
+            },
+            "parser": {
+                "requested": parser,
+                "used": parser_used
+            },
+            "language": language,
+            "stats": {
+                "text_length": len(text),
+                "image_count": len(image_paths)
+            }
+        }
+        
+        with open(info_path, 'w', encoding='utf-8') as f:
+            json.dump(info, f, indent=2, ensure_ascii=False)
+        
+        log_message(f"처리 정보 저장 완료: {info_path}")
         
         return summary
         
     
     except Exception as e:
-        error_msg = f"An error occurred: {str(e)}"
-        print(f"\n{error_msg}")
+        error_msg = f"❌ 처리 중 오류 발생: {str(e)}"
+        try:
+            log_message(error_msg)
+            
+            # 오류 정보 저장
+            error_path = os.path.join(pdf_specific_output_dir, "error_log.txt")
+            with open(error_path, 'w', encoding='utf-8') as f:
+                f.write(f"Error Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Error Type: {type(e).__name__}\n")
+                f.write(f"Error Message: {str(e)}\n")
+                f.write(f"PDF File: {pdf_path}\n")
+                f.write(f"Model: {model_type.upper()}{' - ' + model_name if model_name else ''}\n")
+                f.write(f"Parser: {parser}\n")
+                f.write(f"Language: {language}\n")
+            
+            log_message(f"오류 정보 저장 완료: {error_path}")
+        except Exception as log_error:
+            print(f"로그 저장 중 추가 오류 발생: {str(log_error)}")
+        
         return error_msg
 
 def main():
@@ -310,6 +400,12 @@ def main():
                       help='Specific model name/version (e.g., gpt-4-turbo-preview for OpenAI, gemini-pro for Gemini, llama3:latest for Ollama)')
     parser.add_argument('--output-dir', type=str, default='output',
                       help='Directory to save output files (default: output)')
+    parser.add_argument('--parser', type=str, default='auto',
+                      choices=['auto', 'upstage', 'pymupdf', 'api', 'local'],
+                      help='PDF parser to use. Options: auto (try upstage first, fallback to pymupdf), upstage/api (only use upstage API), pymupdf/local (only use PyMuPDF) (default: auto)')
+    parser.add_argument('--language', type=str, default='ko',
+                      choices=['ko', 'en'],
+                      help='Language for the summary (ko: Korean, en: English) (default: ko)')
     
     args = parser.parse_args()
     
@@ -324,21 +420,28 @@ def main():
     
     # Process the PDF
     if not os.path.exists(args.pdf_path):
-        print(f"Error: PDF file not found at {args.pdf_path}")
+        print(f"❌ 오류: PDF 파일을 찾을 수 없습니다: {args.pdf_path}")
         exit(1)
     
-    print("=" * 40)
-    print(f"PDF Document: {os.path.basename(args.pdf_path)}")
-    print(f"Model: {args.model.upper()}")
-    if args.model_name:
-        print(f"Model name: {args.model_name}")
-    print("=" * 40 + "\n")
+    print("=" * 60)
+    print(f"📄 PDF 문서: {os.path.basename(args.pdf_path)}")
+    print(f"🤖 모델: {args.model.upper()}{' - ' + args.model_name if args.model_name else ''}")
+    print(f"🔍 파서: {args.parser}")
+    print(f"🌐 언어: {args.language}")
+    print(f"📁 출력 디렉토리: {args.output_dir}")
+    print("=" * 60 + "\n")
     
     # Create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
     
-    process_pdf(args.pdf_path, args.model, args.output_dir, args.model_name)
+    process_pdf(
+        pdf_path=args.pdf_path, 
+        model_type=args.model, 
+        output_dir=args.output_dir, 
+        model_name=args.model_name,
+        parser=args.parser,
+        language=args.language
+    )
 
 if __name__ == "__main__":
     main()
-    print("\nProcessing complete.")

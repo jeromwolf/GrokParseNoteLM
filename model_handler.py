@@ -15,7 +15,7 @@ class ModelHandler:
     A handler class for different AI models to generate summaries from text.
     Supports multiple AI models including OpenAI, Google Gemini, Upstage, and local Llama models via Ollama.
     """
-    def __init__(self, model_type: str, model_name: Optional[str] = None):
+    def __init__(self, model_type: str, model_name: Optional[str] = None, language: str = "ko"):
         """
         Initialize the model handler with the specified model type and name.
         
@@ -25,9 +25,15 @@ class ModelHandler:
         """
         self.model_type = model_type.lower()
         self.model_name = model_name or self._get_default_model_name()
+        self.language = language.lower()  # 'ko' 또는 'en'
         self.client = None
         self.model = None
         self.api_url = None
+        
+        # 언어 설정 검증
+        if self.language not in ["ko", "en"]:
+            print(f"경고: 지원하지 않는 언어입니다: {language}. 기본값 'ko'(한국어)로 설정합니다.")
+            self.language = "ko"
         
         # Initialize the appropriate model client
         if self.model_type == "openai":
@@ -158,6 +164,11 @@ class ModelHandler:
         if image_paths:
             print(f"Note: Found {len(image_paths)} images. Image analysis is not yet implemented for {self.model_type.upper()}.")
         
+        # 언어 정보 출력
+        language_name = "한국어" if self.language == "ko" else "영어"
+        print(f"요약 언어: {language_name} ({self.language})")
+        
+        
         try:
             # 모델별 청크 크기 설정
             chunk_sizes = {
@@ -240,15 +251,22 @@ class ModelHandler:
     
     def _generate_openai(self, text: str) -> str:
         """Generate a summary using OpenAI's API."""
+        # 언어에 따른 시스템 메시지와 사용자 메시지 설정
+        if self.language == "ko":
+            system_message = "당신은 문서를 명확하고 구조화된 형식으로 요약해주는 도우미입니다. 문서의 주요 포인트, 핵심 주장, 중요한 세부 사항을 한국어로 요약해주세요."
+            user_message = f"다음 문서를 한국어로 자세히 요약해주세요.\n\n문서 내용:\n{text}"
+        else:  # 영어
+            system_message = "You are an assistant that summarizes documents in a clear and structured format. Please summarize the key points, main arguments, and important details in English."
+            user_message = f"Please summarize the following document in detail in English.\n\nDocument content:\n{text}"
+        
         messages = [
             {
                 "role": "system",
-                "content": "당신은 문서를 명확하고 구조화된 형식으로 요약해주는 도우미입니다. "
-                          "문서의 주요 포인트, 핵심 주장, 중요한 세부 사항을 한국어로 요약해주세요."
+                "content": system_message
             },
             {
                 "role": "user",
-                "content": f"다음 문서를 한국어로 자세히 요약해주세요.\n\n문서 내용:\n{text}"
+                "content": user_message
             }
         ]
         
@@ -266,12 +284,21 @@ class ModelHandler:
     
     def _generate_gemini(self, text: str) -> str:
         """Generate a summary using Google's Gemini API."""
-        prompt = f"""다음 문서를 한국어로 자세히 요약해주세요. 주요 포인트, 핵심 주장, 중요한 세부 사항을 포함해주세요.
-        
-        문서 내용:
-        {text}
-        
-        한국어 요약:"""
+        # 언어에 따른 프롬프트 설정
+        if self.language == "ko":
+            prompt = f"""다음 문서를 한국어로 자세히 요약해주세요. 주요 포인트, 핵심 주장, 중요한 세부 사항을 포함해주세요.
+            
+            문서 내용:
+            {text}
+            
+            한국어 요약:"""
+        else:  # 영어
+            prompt = f"""Please summarize the following document in English. Include key points, main arguments, and important details.
+            
+            Document content:
+            {text}
+            
+            English summary:"""
         
         response = self.model.generate_content(
             prompt,
@@ -299,13 +326,39 @@ class ModelHandler:
             print(f"경고: 텍스트가 너무 깁니다. {len(text)}자에서 {max_length}자로 잘라냅니다.")
             text = text[:max_length] + "... (이하 생략)"
         
-        # 단순화된 프롬프트 사용
-        prompt = f"""[INST]
-        다음 문서를 한국어로 요약해주세요. 반드시 한국어로 작성해야 합니다.
-        
-        문서:
-        {text}
-        [/INST]"""
+        # 언어에 따른 프롬프트 설정
+        if self.language == "ko":
+            prompt = f"""[INST]
+            당신은 한국어 요약 전문가입니다. 다음 문서를 읽고 반드시 한국어로만 요약해주세요.
+            영어로 요약하지 말고 한국어로만 작성하세요.
+            
+            요약 규칙:
+            1. 반드시 한국어로만 작성할 것
+            2. 문서의 핵심 내용을 포함할 것
+            3. 구조적으로 정리하여 이해하기 쉽게 작성할 것
+            4. 영어 단어나 문장을 사용하지 말 것
+            
+            문서 내용:
+            {text}
+            
+            한국어로 요약:
+            [/INST]"""
+        else:  # 영어
+            prompt = f"""[INST]
+            You are an English summarization expert. Please read the following document and summarize it in English only.
+            Do not use Korean in your summary.
+            
+            Summarization rules:
+            1. Write only in English
+            2. Include the core content of the document
+            3. Structure the summary for easy understanding
+            4. Be concise but comprehensive
+            
+            Document content:
+            {text}
+            
+            English summary:
+            [/INST]"""
         
         print(f"Ollama API 요청 중: {self.model_name or 'llama3:latest'}")
         try:
@@ -387,15 +440,23 @@ class ModelHandler:
                 "Content-Type": "application/json"
             }
             
+            # 언어에 따른 메시지 구성
+            if self.language == "ko":
+                system_message = "당신은 문서를 명확하고 구조화된 형식으로 요약해주는 도우미입니다. 반드시 한국어로만 답변해주세요."
+                user_message = f"다음 문서를 한국어로 자세히 요약해주세요. 주요 포인트, 핵심 주장, 중요한 세부 사항을 포함해주세요.\n\n문서 내용:\n{text}"
+            else:  # 영어
+                system_message = "You are an assistant that summarizes documents in a clear and structured format. Please respond in English only."
+                user_message = f"Please summarize the following document in English. Include key points, main arguments, and important details.\n\nDocument content:\n{text}"
+            
             # Upstage Solar API 형식에 맞게 메시지 구성
             messages = [
                 {
                     "role": "system",
-                    "content": "당신은 문서를 명확하고 구조화된 형식으로 요약해주는 도우미입니다. 반드시 한국어로만 답변해주세요."
+                    "content": system_message
                 },
                 {
                     "role": "user",
-                    "content": f"다음 문서를 한국어로 자세히 요약해주세요. 주요 포인트, 핵심 주장, 중요한 세부 사항을 포함해주세요.\n\n문서 내용:\n{text}"
+                    "content": user_message
                 }
             ]
             
