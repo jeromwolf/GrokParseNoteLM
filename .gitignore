@@ -1,6 +1,9 @@
 # 환경 변수 파일
 .env
 
+# Output directories
+output/
+
 # Python
 __pycache__/
 *.py[cod]

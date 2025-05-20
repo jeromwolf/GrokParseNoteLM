@@ -72,44 +72,55 @@ def extract_text_and_images_from_pdf(pdf_path, output_image_dir):
     doc.close()
     return full_text, image_paths
 
-def summarize_with_upstage(text_content, image_base64_list):
-    """Sends text and image data to Upstage API for summarization."""
-    if not UPSTAGE_API_KEY:
-        return "Error: UPSTAGE_API_KEY not found. Please set it in your .env file."
+def summarize_with_upstage(text_content, image_paths=None):
+    """Sends text to Upstage API for summarization.
+    
+    Args:
+        text_content (str): Extracted text from the PDF
+        image_paths (list, optional): List of paths to extracted images. Not used in summarization for now.
+    
+    Returns:
+        str: Summary of the text content
+    """
+    api_key = os.getenv("UPSTAGE_API_KEY")
+    if not api_key:
+        return "Error: UPSTAGE_API_KEY not found in .env file"
 
+    # Set up headers for the API request
     headers = {
-        "Authorization": f"Bearer {UPSTAGE_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
 
-    messages_content = []
-    # Add text part
-    messages_content.append({
-        "type": "text",
-        "text": text_content
-    })
-
-    # Add image parts
-    for img_b64 in image_base64_list:
-        if img_b64:
-            messages_content.append({
-                "type": "image_url",
-                "image_url": {"url": img_b64}
-            })
+    url = "https://api.upstage.ai/v1/chat/completions"
+    
+    # Log that we're only using text for summarization
+    if image_paths:
+        print(f"Note: Found {len(image_paths)} images. Images will be saved but not included in summarization for now.")
+    
+    # Prepare the prompt
+    prompt = f"""Please provide a concise summary of the following document. 
+    Focus on the main points, key findings, and important details.
+    
+    Document:
+    {text_content}
+    """
 
     payload = {
-        "model": "solar-1-mini-chat", # Or another model like solar-1-mini-chat-240410
+        "model": "solar-1-mini-chat",
         "messages": [
             {
                 "role": "system",
-                "content": "You are a helpful assistant. Summarize the provided document which includes text and images. Integrate information from both text and images in your summary."
+                "content": "You are a helpful assistant that provides clear and concise summaries of documents. Focus on the main points and key information."
             },
             {
                 "role": "user",
-                "content": messages_content
+                "content": prompt
             }
         ],
-        "stream": False # Set to True if you want streaming responses
+        "max_tokens": 1000,  # Increase if you need longer summaries
+        "temperature": 0.3,  # Lower temperature for more focused and deterministic output
+        "stream": False
     }
 
     try:
@@ -125,6 +136,50 @@ def summarize_with_upstage(text_content, image_base64_list):
 
 # --- Main Execution ---
 
+def process_pdf(pdf_path):
+    """Process a PDF file: extract text and images, then summarize the text."""
+    print(f"Processing PDF: {pdf_path}...")
+    
+    # Create a timestamped output directory for this specific PDF run
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    pdf_basename = os.path.splitext(os.path.basename(pdf_path))[0]
+    pdf_specific_output_dir = os.path.join("output", f"{pdf_basename}_{timestamp}")
+    
+    # Create the output directory if it doesn't exist
+    os.makedirs(pdf_specific_output_dir, exist_ok=True)
+    
+    try:
+        # Extract text and images
+        print(f"Images will be temporarily stored in: {pdf_specific_output_dir}")
+        text_content, image_paths = extract_text_and_images_from_pdf(pdf_path, pdf_specific_output_dir)
+        
+        if not text_content.strip():
+            print("Warning: No text content was extracted from the PDF.")
+            return "No text content found in the PDF."
+            
+        # Summarize only the text content
+        print("Summarizing text content with Upstage Solar API...")
+        summary = summarize_with_upstage(text_content, image_paths)  # Passing image_paths for logging only
+        
+        # Print the summary
+        print("\n--- Summary ---")
+        print(summary)
+        print("----------------")
+        
+        # Save the summary to a file
+        summary_file = os.path.join(pdf_specific_output_dir, "summary.txt")
+        with open(summary_file, 'w', encoding='utf-8') as f:
+            f.write(summary)
+        print(f"Summary saved to: {summary_file}")
+        
+        return summary
+    
+    finally:
+        # Clean up temporary image directory for this specific PDF run
+        if os.path.exists(pdf_specific_output_dir):
+            print(f"Cleaning up temporary image directory: {pdf_specific_output_dir}")
+            shutil.rmtree(pdf_specific_output_dir)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Summarize a PDF document using Upstage Solar API.")
     parser.add_argument("pdf_file", help="Path to the PDF file to summarize.")
@@ -134,44 +189,5 @@ if __name__ == "__main__":
         print(f"Error: PDF file not found at {args.pdf_file}")
         exit(1)
 
-    pdf_basename = os.path.splitext(os.path.basename(args.pdf_file))[0]
-    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    
-    # Define the main output directory
-    main_output_folder = "output"
-    # Define the specific output directory for this PDF run
-    pdf_specific_output_dir = os.path.join(main_output_folder, f"{pdf_basename}_{timestamp}")
-
-    # Create the main output folder if it doesn't exist
-    if not os.path.exists(main_output_folder):
-        os.makedirs(main_output_folder)
-
-    print(f"Processing PDF: {args.pdf_file}...")
-    print(f"Images will be temporarily stored in: {pdf_specific_output_dir}")
-    
-    try:
-        extracted_text, extracted_image_paths = extract_text_and_images_from_pdf(args.pdf_file, pdf_specific_output_dir)
-        print(f"Extracted {len(extracted_image_paths)} images to {pdf_specific_output_dir}")
-
-        image_base64_data = []
-        if extracted_image_paths:
-            print("Converting images to base64...")
-            for img_path in extracted_image_paths:
-                b64_img = image_to_base64(img_path)
-                if b64_img:
-                    image_base64_data.append(b64_img)
-        
-        print("Summarizing with Upstage Solar API...")
-        summary_result = summarize_with_upstage(extracted_text, image_base64_data)
-
-        print("\n--- Summary ---")
-        print(summary_result)
-        print("---------------")
-
-    finally:
-        # Clean up temporary image directory for this specific PDF run
-        if os.path.exists(pdf_specific_output_dir):
-            print(f"Cleaning up temporary image directory: {pdf_specific_output_dir}")
-            shutil.rmtree(pdf_specific_output_dir)
-
+    process_pdf(args.pdf_file)
     print("Processing complete.")
