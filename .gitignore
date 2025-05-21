@@ -3,6 +3,7 @@
 
 # Output directories
 output/
+workspace/
 
 # Python
 __pycache__/

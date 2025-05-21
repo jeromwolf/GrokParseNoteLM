@@ -1,7 +1,7 @@
 # GrokParseNoteLM
 
 ## 📋 프로젝트 소개
-GrokParseNoteLM은 다양한 AI 모델을 활용한 PDF 문서 파싱 및 요약 도구입니다. PDF 문서에서 텍스트와 이미지를 추출하고, 여러 AI 모델(OpenAI, Llama, Upstage, Gemini)을 사용하여 한국어로 요약합니다. 업스테이지 Document Parser API를 주요 파서로 사용하며, 실패 시 PyMuPDF를 백업 파서로 활용하는 견고한 아키텍처를 갖추고 있습니다.
+GrokParseNoteLM은 다양한 AI 모델을 활용한 다중 문서 파싱 및 요약 도구입니다. PDF 및 텍스트 문서에서 텍스트와 이미지를 추출하고, 여러 AI 모델(OpenAI, Llama, Upstage, Gemini)을 사용하여 한국어로 요약합니다. 업스테이지 Document Parser API를 주요 파서로 사용하며, 실패 시 PyMuPDF를 백업 파서로 활용하는 견고한 아키텍처를 갖추고 있습니다. 또한 여러 문서를 동시에 처리하고 통합 분석할 수 있는 노트북 기능을 제공합니다.
 
 ## 🚀 프로젝트 개요
 
@@ -32,7 +32,9 @@ GrokParseNoteLM은 다양한 AI 모델을 활용한 PDF 문서 파싱 및 요약
   - [x] 긴 PDF 문서 처리 기능 개선
   - [x] 이중 PDF 파서 시스템 구현 (업스테이지 API + PyMuPDF 백업)
   - [x] Llama 모델 한국어 요약 최적화
-  - [ ] 이미지 분석 기능 구현 (MCP 이미지 리더)
+  - [x] 이미지 분석 기능 구현 (OCR 서버)
+  - [x] 여러 문서 통합 처리 및 분석 기능 구현
+  - [x] 문서 기반 질의응답 기능 구현
   - [ ] 웹 인터페이스 개발
 
 ### ✨ 주요 기능
@@ -47,7 +49,16 @@ GrokParseNoteLM은 다양한 AI 모델을 활용한 PDF 문서 파싱 및 요약
   - Gemini 모델 지원 준비 중
 - **이미지 처리**
   - PDF 내 이미지 자동 추출 및 저장
-  - 이미지 분석 기능 개발 중 (MCP 이미지 리더)
+  - **OCR 서버**: FastAPI와 Tesseract를 활용한 이미지 텍스트 추출
+  - 이미지 분석 결과를 마크다운 형식으로 통합
+- **다중 문서 처리**
+  - 여러 PDF 및 텍스트 문서 동시 처리
+  - 문서 관리 시스템: 추가, 제거, 목록 조회 기능
+  - 처리된 문서의 통합 결과 생성
+- **문서 기반 질의응답**
+  - 처리된 여러 문서의 통합 결과를 바탕으로 LLM에 질의
+  - 컨텍스트 길이 자동 조절
+  - 질의와 응답 결과 저장
 - **오류 처리 및 로깅**
   - API 호출 실패 시 자세한 오류 메시지 제공
   - 사용된 파서 정보 로깅
@@ -68,12 +79,12 @@ GrokParseNoteLM은 다양한 AI 모델을 활용한 PDF 문서 파싱 및 요약
 
 ## 📋 사용 방법
 
-### 기본 사용법
+### 1. 단일 PDF 처리 (기존 기능)
 ```bash
 python main.py <PDF경로> --model <모델명> --output-dir <출력디렉토리>
 ```
 
-### 예시
+#### 예시
 ```bash
 # OpenAI 모델 사용
 python main.py Data/sample.pdf --model openai --model-name gpt-4-turbo-preview --output-dir output/openai_test
@@ -82,12 +93,55 @@ python main.py Data/sample.pdf --model openai --model-name gpt-4-turbo-preview -
 python main.py Data/sample.pdf --model llama --model-name llama3:latest --output-dir output/llama_test
 ```
 
-### 주요 파라미터
+#### 주요 파라미터
 - `--model`: 사용할 모델 (openai, llama, upstage, gemini)
 - `--model-name`: 모델 이름 (선택적)
 - `--output-dir`: 출력 디렉토리 (기본값: output/)
 - `--parser`: 사용할 PDF 파서 (upstage, pymupdf) - 미지정 시 업스테이지 API 우선 사용, 실패 시 PyMuPDF 자동 전환
 - `--language`: 요약 언어 (ko, en) - 기본값: ko (한국어)
+
+### 2. 다중 문서 처리 (새로운 기능)
+
+#### 문서 관리
+```bash
+# 문서 추가
+python notebook_app.py add <문서경로1> <문서경로2> ...
+
+# 문서 목록 조회
+python notebook_app.py list
+
+# 문서 제거
+python notebook_app.py remove <문서_ID>
+```
+
+#### 문서 처리
+```bash
+# 모든 문서 처리
+python notebook_app.py process --model-type openai --model-name gpt-4-turbo-preview
+
+# 특정 문서만 처리
+python notebook_app.py process --doc-ids <문서_ID1> <문서_ID2> --model-type openai
+```
+
+#### 통합 결과 생성
+```bash
+# 처리된 모든 문서의 통합 결과 생성
+python notebook_app.py combine
+```
+
+#### 문서 기반 질의응답
+```bash
+# 처리된 문서를 바탕으로 질의
+python notebook_app.py query "여기에 질문을 입력하세요" --model-type openai
+```
+
+#### 주요 파라미터
+- `--workspace`: 작업 디렉토리 (기본값: workspace)
+- `--model-type`: 사용할 모델 타입 (openai, llama, upstage, gemini)
+- `--model-name`: 사용할 모델 이름
+- `--parser`: PDF 파서 (auto, upstage, pymupdf)
+- `--language`: 언어 (ko, en)
+- `--ocr-language`: OCR 언어 (kor+eng, eng 등)
 
 ## 🎯 향후 계획
 - **이미지 분석 기능 구현**
