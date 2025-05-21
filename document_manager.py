@@ -452,14 +452,17 @@ class DocumentsManager:
                     "success": False
                 }
         return results
-    
+
     def generate_combined_markdown(self) -> str:
         """
-        모든 처리된 문서의 결과를 통합하여 마크다운 형식으로 반환
+        처리된 모든 문서의 결과를 하나의 마크다운 파일로 통합
         
         Returns:
-            마크다운 형식의 통합 결과
+            str: 마크다운 형식의 통합 결과
         """
+        logger.info("통합 마크다운 파일 생성 시작")
+        
+        # 처리된 문서만 선택
         processed_docs = [doc for doc in self.documents.values() if doc.processed]
         
         if not processed_docs:
@@ -490,90 +493,63 @@ class DocumentsManager:
             
             markdown += "\n"
             
-            # 요약 정보 추가 (여러 방법으로 시도)
+            # 요약 정보 추가 (중복 없이 한 번만)
             summary_added = False
+            summary_content = None
             
-            # 1. processed_data에서 직접 요약 정보 찾기
-            if doc.processed_data["summary"]:
-                markdown += f"### 요약\n```\n{doc.processed_data['summary']}\n```\n\n"
+            # 1. processed_data에서 요약 정보 찾기
+            if doc.processed_data.get("summary"):
+                summary_content = doc.processed_data['summary']
                 summary_added = True
             
-            # 2. 마크다운 결과에서 요약 정보 찾기
-            elif doc.processed_data["markdown"]:
-                markdown_content = doc.processed_data["markdown"]
-                
-                # 텍스트 요약 섹션 찾기 (여러 형식 시도)
-                for section_header in ["## 텍스트 요약", "## 요약"]:
-                    if section_header in markdown_content:
-                        parts = markdown_content.split(section_header)
-                        if len(parts) > 1:
-                            summary_section = parts[1]
-                            # 다음 섹션 헤더가 있으면 그 전까지만 추출
-                            if "##" in summary_section:
-                                summary_section = summary_section.split("##")[0]
-                            markdown += f"### 요약\n{summary_section.strip()}\n\n"
-                            summary_added = True
-                            break
-            
-            # 3. 요약 파일 직접 읽기 시도
+            # 2. 출력 디렉토리에서 요약 파일 찾기 (아직 요약이 없는 경우에만)
             if not summary_added and doc.output_dir:
-                summary_paths = [
+                summary_files = [
                     os.path.join(doc.output_dir, "summary.md"),
-                    os.path.join(doc.output_dir, "summary.txt"),
-                    os.path.join(doc.output_dir, "summary.json")
+                    os.path.join(doc.output_dir, "summary.txt")
                 ]
                 
-                for path in summary_paths:
+                for path in summary_files:
                     if os.path.exists(path):
                         try:
-                            with open(path, 'r', encoding='utf-8') as f:
+                            with open(path, "r", encoding="utf-8") as f:
                                 content = f.read()
-                                
-                                # JSON 파일인 경우
-                                if path.endswith('.json'):
-                                    try:
-                                        json_data = json.loads(content)
-                                        if 'summary' in json_data:
-                                            markdown += f"### 요약\n```\n{json_data['summary']}\n```\n\n"
-                                            summary_added = True
-                                            break
-                                    except json.JSONDecodeError:
-                                        pass
-                                
-                                # 마크다운 또는 텍스트 파일인 경우
-                                else:
-                                    # 요약 섹션 찾기
-                                    for section_header in ["## 텍스트 요약", "## 요약"]:
-                                        if section_header in content:
-                                            parts = content.split(section_header)
-                                            if len(parts) > 1:
-                                                summary_section = parts[1]
-                                                if "##" in summary_section:
-                                                    summary_section = summary_section.split("##")[0]
-                                                markdown += f"### 요약\n{summary_section.strip()}\n\n"
+                            
+                            # 요약 파일이 있고 내용이 있는 경우
+                            if content.strip():
+                                # 마크다운 파일은 헤더 이후 내용만 추출
+                                if path.endswith(".md") and "#" in content:
+                                    # 헤더 이후 내용 추출
+                                    lines = content.split("\n")
+                                    for i, line in enumerate(lines):
+                                        if line.startswith("#"):
+                                            # 헤더 다음 줄부터 포함
+                                            if i+1 < len(lines):
+                                                summary_content = "\n".join(lines[i+1:]).strip()
                                                 summary_added = True
                                                 break
-                                    
-                                    # 요약 섹션을 찾지 못했지만 파일 내용이 있는 경우
-                                    if not summary_added and content.strip():
-                                        # 파일 내용이 너무 길면 일부만 포함
-                                        if len(content) > 2000:
-                                            content = content[:2000] + "...\n\n(내용이 너무 깁니다. 일부만 표시합니다.)\n\n"
-                                        markdown += f"### 파일 내용\n```\n{content}\n```\n\n"
-                                        summary_added = True
-                                        break
+                                else:
+                                    # 텍스트 파일은 전체 내용 사용
+                                    summary_content = content.strip()
+                                    summary_added = True
+                                break
                         except Exception as e:
                             logger.warning(f"요약 파일 읽기 실패: {path} - {str(e)}")
             
-            # 4. 텍스트 내용 추가 (요약이 없는 경우)
-            if not summary_added and doc.processed_data["text"]:
+            # 3. 텍스트 내용 추가 (요약이 없는 경우)
+            if not summary_added and doc.processed_data.get("text"):
                 text = doc.processed_data["text"]
                 if len(text) > 1000:
-                    text = text[:1000] + "..."
-                markdown += f"### 텍스트 내용 (일부)\n```\n{text}\n```\n\n"
+                    text = text[:1000] + "...\n\n(내용이 너무 깁니다. 일부만 표시합니다.)"
+                summary_content = text
+                summary_added = True
             
-            # 5. 이미지 분석 결과 추가
-            if doc.processed_data["markdown"] and "## 이미지 분석 결과" in doc.processed_data["markdown"]:
+            # 최종 요약 내용 추가 (단 한 번만)
+            if summary_content:
+                markdown += f"### 요약\n```\n{summary_content}\n```\n\n"
+            
+            # 4. 이미지 분석 결과 추가
+            if doc.processed_data.get("markdown") and "## 이미지 분석 결과" in doc.processed_data["markdown"]:
                 markdown_content = doc.processed_data["markdown"]
                 img_section = markdown_content.split("## 이미지 분석 결과")[1]
                 if "##" in img_section:
@@ -584,17 +560,9 @@ class DocumentsManager:
                     img_section = img_section[:2000] + "...\n\n(이미지 분석 결과가 너무 깁니다. 일부만 표시합니다.)\n\n"
                 
                 markdown += f"### 이미지 분석 결과\n{img_section.strip()}\n\n"
-            elif doc.processed_data["images"]:
+            elif doc.processed_data.get("images"):
                 markdown += f"### 이미지 정보\n"
                 markdown += f"- **이미지 수**: {len(doc.processed_data['images'])}\n\n"
-        
-        # 통합 결과 저장
-        combined_path = self.workspace_dir / "combined_results.md"
-        with open(combined_path, 'w', encoding='utf-8') as f:
-            f.write(markdown)
-        
-        logger.info(f"통합 마크다운 생성 완료: {combined_path}")
-        return markdown
         
         # 통합 결과 저장
         combined_path = self.workspace_dir / "combined_results.md"

@@ -6,7 +6,6 @@ from typing import List, Dict, Any, Optional, Tuple
 
 # 내부 모듈 임포트
 from document_processor import extract_text_and_images_from_pdf
-from pymupdf_processor import extract_text_and_images_from_pdf as extract_with_pymupdf
 from model_handler import ModelHandler
 from image_analyzer import analyze_pdf_images
 
@@ -49,6 +48,9 @@ def analyze_pdf(
         # PDF 파일 존재 확인
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"PDF 파일을 찾을 수 없습니다: {pdf_path}")
+            
+        # 문서 처리기 초기화
+        model_handler = ModelHandler(model_type=model_type, model_name=model_name)
         
         # 출력 디렉토리 생성
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -78,43 +80,73 @@ def analyze_pdf(
         image_paths = []
         parser_used = ""
         
-        if parser == "auto" or parser == "upstage" or parser == "api":
-            try:
-                log_message("업스테이지 Document Parser API를 사용하여 추출 시도 중...")
-                text, image_paths = extract_text_and_images_from_pdf(pdf_path, pdf_specific_output_dir)
-                if text:
-                    parser_used = "upstage"
-                    log_message("업스테이지 Document Parser API를 사용하여 추출 완료")
-                else:
-                    log_message("업스테이지 Document Parser API 추출 실패, PyMuPDF로 대체")
-            except Exception as e:
-                log_message(f"업스테이지 Document Parser API 오류: {str(e)}")
-                if parser == "api" or parser == "upstage":
-                    raise
-        
-        if not text and (parser == "auto" or parser == "pymupdf" or parser == "local"):
-            try:
-                log_message("PyMuPDF를 사용하여 추출 시도 중...")
-                text, image_paths = extract_with_pymupdf(pdf_path, pdf_specific_output_dir)
-                parser_used = "pymupdf"
-                log_message("PyMuPDF를 사용하여 추출 완료")
-            except Exception as e:
-                log_message(f"PyMuPDF 오류: {str(e)}")
-                raise
-        
-        if not text:
-            raise ValueError("PDF에서 텍스트를 추출할 수 없습니다.")
-        
-        log_message(f"추출된 텍스트: {len(text)} 자")
-        log_message(f"추출된 이미지: {len(image_paths)}개")
+        # PDF 파싱 (업스테이지 파서만 사용)
+        try:
+            # 이미지 저장을 위한 디렉토리 생성
+            images_output_dir = os.path.join(output_dir, "images")
+            os.makedirs(images_output_dir, exist_ok=True)
+            
+            text, images = extract_text_and_images_from_pdf(
+                pdf_path, 
+                output_dir=output_dir  # 이미지 저장 디렉토리는 parse_document 내부에서 처리
+            )
+            metadata = {}  # 메타데이터는 빈 딕셔너리로 초기화
+            logger.info("업스테이지 PDF 파서를 사용하여 문서를 처리했습니다.")
+            
+            if not text:
+                # API 응답에서 직접 텍스트 추출 시도
+                response_file = os.path.join(output_dir, "images", "logs", "response_*.json")
+                import glob
+                response_files = glob.glob(response_file)
+                if response_files:
+                    import json
+                    with open(response_files[0], 'r', encoding='utf-8') as f:
+                        response_data = json.load(f)
+                    
+                    # 다양한 키에서 텍스트 추출 시도
+                    for key in ['text', 'markdown', 'html']:
+                        if key in response_data.get('content', {}):
+                            text = response_data['content'][key]
+                            logger.info(f"API 응답에서 {key} 형식으로 텍스트 추출 성공")
+                            break
+                    
+                    # 여전히 텍스트가 없으면 content에서 직접 추출
+                    if not text and 'content' in response_data:
+                        text = str(response_data['content'])
+            
+            if not text:
+                raise ValueError("PDF에서 텍스트를 추출할 수 없습니다.")
+            
+            log_message(f"추출된 텍스트: {len(text)} 자")
+            log_message(f"추출된 이미지: {len(images) if images else 0}개")
+            
+        except Exception as e:
+            logger.error(f"PDF 분석 중 오류 발생: {str(e)}")
+            raise
         
         # 2. 이미지 OCR 분석
         log_message("2. 추출된 이미지 OCR 분석 중...")
         
         image_analysis_markdown = ""
-        if image_paths:
-            image_analysis_markdown = analyze_pdf_images(image_paths, ocr_language)
-            log_message(f"이미지 OCR 분석 완료")
+        if images and len(images) > 0:
+            # 이미지 경로가 상대 경로일 수 있으므로 절대 경로로 변환
+            image_paths = []
+            for img_path in images:
+                if not os.path.isabs(img_path):
+                    # 이미지 경로가 상대 경로인 경우, output_dir을 기준으로 절대 경로 생성
+                    abs_img_path = os.path.abspath(os.path.join(output_dir, img_path))
+                    image_paths.append(abs_img_path)
+                else:
+                    image_paths.append(img_path)
+            
+            log_message(f"분석할 이미지 경로: {image_paths}")
+            
+            if image_paths:
+                image_analysis_markdown = analyze_pdf_images(image_paths, ocr_language)
+                log_message(f"이미지 OCR 분석 완료")
+            else:
+                image_analysis_markdown = "## 이미지 분석 결과\n\n이미지 경로를 확인할 수 없습니다.\n"
+                log_message("분석할 이미지 경로를 찾을 수 없습니다.")
         else:
             image_analysis_markdown = "## 이미지 분석 결과\n\n이미지가 없거나 추출되지 않았습니다.\n"
             log_message("분석할 이미지가 없습니다.")

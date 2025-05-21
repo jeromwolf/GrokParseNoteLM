@@ -194,3 +194,95 @@ python notebook_app.py query "여기에 질문을 입력하세요" --model-type 
 - **OpenAI**: 약 1분 30초
 - **Llama**: 약 1분 30초
 - **Upstage**: 약 2분 (API 호출 시간 포함)
+
+## 🧪 테스트 가이드
+
+### 1. 기본 워크플로우 테스트 (notebook_app.py 사용)
+
+#### 1-1. 문서 추가
+```bash
+# PDF나 MD 파일을 추가 
+python notebook_app.py add [파일경로1] [파일경로2] ...
+
+# 예시: Data 폴더의 PDF와 MD 추가
+python notebook_app.py add Data/ontology.pdf Data/ontology.md
+```
+
+#### 1-2. 문서 목록 확인
+```bash
+python notebook_app.py list
+```
+
+#### 1-3. 문서 처리 (OpenAI LLM 사용)
+```bash
+# OpenAI 모델로 처리
+python notebook_app.py process --parser upstage --model-type openai --model-name gpt-4-turbo-preview
+
+# Llama 모델로 처리하려면
+python notebook_app.py process --parser upstage --model-type llama --model-name llama-2-70b
+```
+
+#### 1-4. 처리 결과 통합
+```bash
+python notebook_app.py combine
+# 결과는 workspace/combined_results.md에 저장됨
+```
+
+#### 1-5. 질의응답 생성
+```bash
+python notebook_app.py query "질문 내용" --model-type openai --model-name gpt-4-turbo-preview
+# 결과는 workspace/query_results_[timestamp]/query_result.md에 저장됨
+```
+
+### 2. 이미지 분석 서버 테스트 (FastAPI/Tesseract OCR)
+
+#### 2-1. 이미지 분석 서버 시작
+```bash
+# 포트 5050에서 FastAPI 서버 실행
+python simple_image_reader.py
+```
+
+#### 2-2. 이미지 분석 API 테스트
+```bash
+# 단일 이미지 OCR
+curl -X POST "http://localhost:5050/analyze_image" -F "file=@이미지경로.png"
+
+# 디렉토리 일괄 분석
+curl -X POST "http://localhost:5050/analyze_directory" -d '{"directory_path": "이미지디렉토리경로"}'
+```
+
+### 3. 특수 상황 테스트
+
+#### 3-1. 문서 중복 요약 문제 검증
+```bash
+# 통합 마크다운 생성 후 결과 확인
+python notebook_app.py combine
+cat workspace/combined_results.md
+# 각 문서마다 요약이 한 번만 표시되는지 확인
+```
+
+#### 3-2. 이미지가 없는 PDF 테스트
+```bash
+# 이미지가 없는 PDF 처리 테스트
+python notebook_app.py add Data/ontology.pdf
+python notebook_app.py process --parser upstage --model-type openai
+# 결과: 이미지 0개 메시지 확인
+```
+
+#### 3-3. 대용량 PDF 테스트
+```bash
+# 대용량/이미지가 많은 PDF 처리 (큰 PDF가 있는 경우)
+python main.py 대용량PDF경로 --model openai --parser upstage --output-dir 출력디렉토리
+```
+
+### 4. 디버깅 팁
+- 로그 확인: 로깅이 INFO 레벨로 설정되어 있어 대부분의 진행 상황을 터미널에서 확인 가능
+- 중간 결과 확인: workspace/output/ 디렉토리에서 각 문서별 중간 결과물 확인 가능
+- API 키 문제: `.env` 파일에 UPSTAGE_API_KEY, OPENAI_API_KEY가 올바르게 설정되어 있는지 확인
+
+### 5. 주의사항
+- API 키 관리: UPSTAGE_API_KEY, OPENAI_API_KEY 환경변수 설정 필요
+- 이미지 서버: 포트 5050 사용, 다른 서비스와 충돌 여부 확인
+- 파일 경로: 상대 경로보다 절대 경로 사용 권장
+- 요약 중복 문제: document_manager.py의 generate_combined_markdown 함수에서 해결됨
+- OCR 결과: 이미지 품질에 따라 결과 변동 가능
