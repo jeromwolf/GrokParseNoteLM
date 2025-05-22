@@ -65,7 +65,7 @@ documents_manager = DocumentsManager(workspace_dir=app.config['WORKSPACE_DIR'])
 # 기존 문서 목록 비우기 (시작 시 기존 문서 표시하지 않기 위해)
 documents_manager.documents = {}
 
-# 쿼리 엔진 초기화
+# 쿼리 엔진 초기화 (OpenAI 모델 사용)
 query_engine = QueryEngine(model_type="openai")
 
 # 처리 작업 상태 저장
@@ -73,8 +73,17 @@ processing_tasks = {}
 
 @app.route('/')
 def index():
-    documents = documents_manager.get_all_documents()
-    doc_list = [doc.to_dict() for doc in documents]
+    # URL 파라미터로 문서 로드 여부 확인
+    load_docs = request.args.get('load_docs', default='false')
+    
+    if load_docs == 'true':
+        # 문서 추가 후 로드시에는 목록 표시
+        documents = documents_manager.get_all_documents()
+        doc_list = [doc.to_dict() for doc in documents]
+    else:
+        # 초기 로드시에는 문서 목록 표시하지 않음
+        doc_list = []
+    
     return render_template('index.html', documents=doc_list)
 
 @app.route('/upload', methods=['POST'])
@@ -108,10 +117,10 @@ def upload_file():
             
             return jsonify({
                 'success': True, 
-                'message': '파일이 성공적으로 업로드되었습니다. 문서 처리가 시작되었습니다.', 
+                'message': '파일이 성공적으로 업로드되었습니다.',
+                'task_id': task_id,
                 'doc_id': doc_id,
-                'filename': filename,
-                'task_id': task_id
+                'redirect_url': '/?load_docs=true'
             })
         except Exception as e:
             return jsonify({'error': f'문서 추가 실패: {str(e)}'}), 500
@@ -210,8 +219,13 @@ def process_query():
 # 문서 처리 비동기 함수
 def process_document_async(doc_id, task_id):
     try:
-        # 문서 처리
-        result = documents_manager.process_document(doc_id)
+        # 문서 처리 (OpenAI 모델 사용)
+        result = documents_manager.process_document(
+            doc_id,
+            model_type="openai",
+            parser="pymupdf",  # 문서 파서 지정
+            language="ko"      # 한국어 처리
+        )
         
         # 처리 완료 상태 업데이트
         processing_tasks[task_id] = {
@@ -277,7 +291,44 @@ def generate_combined_markdown():
     except Exception as e:
         return jsonify({'error': f'통합 마크다운 생성 실패: {str(e)}'}), 500
 
-if __name__ == '__main__':
+# 처리된 문서 내용 가져오기 API
+@app.route('/api/document/<doc_id>/processed', methods=['GET'])
+def get_processed_document(doc_id):
+    try:
+        # 문서 가져오기
+        document = documents_manager.get_document(doc_id)
+        if not document:
+            return jsonify({
+                'success': False,
+                'error': '문서를 찾을 수 없습니다.'
+            }), 404
+            
+        # 문서가 처리되지 않은 경우 처리 진행
+        if not document.processed:
+            result = documents_manager.process_document(
+                doc_id,
+                model_type="openai",
+                parser="pymupdf",
+                language="ko"
+            )
+        
+        # 처리된 문서 데이터 반환
+        response_data = {
+            'success': True,
+            'title': document.filename,
+            'content': document.processed_data.get('text', ''),
+            'summary': document.processed_data.get('summary', ''),
+            'images': document.processed_data.get('images', [])
+        }
+        
+        return jsonify(response_data)
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+if __name__ == "__main__":
     print(f"템플릿 디렉터리: {template_dir}")
     print(f"정적 파일 디렉터리: {static_dir}")
     app.run(debug=True, port=5007)

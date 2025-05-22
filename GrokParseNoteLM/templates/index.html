@@ -82,50 +82,12 @@
                             </div>
                         {% endfor %}
                     {% else %}
-                        <div class="document-item sample">
-                            <div class="doc-checkbox-container">
-                                <input type="checkbox" class="doc-checkbox" checked>
-                            </div>
-                            <div class="doc-icon">
-                                <span class="material-icons">picture_as_pdf</span>
-                            </div>
-                            <div class="doc-info">
-                                <div class="doc-title">BFO2-Reference.pdf</div>
-                            </div>
+                        <div class="empty-documents-message">
+                            <span class="material-icons">info</span>
+                            <p>문서 목록이 비어 있습니다.</p>
+                            <p class="empty-hint">왼쪽 상단의 + 버튼을 클릭하여 새 문서를 추가하세요.</p>
                         </div>
-                        <div class="document-item sample">
-                            <div class="doc-checkbox-container">
-                                <input type="checkbox" class="doc-checkbox" checked>
-                            </div>
-                            <div class="doc-icon">
-                                <span class="material-icons">picture_as_pdf</span>
-                            </div>
-                            <div class="doc-info">
-                                <div class="doc-title">REC-owl2-overview-20121211.pdf</div>
-                            </div>
-                        </div>
-                        <div class="document-item sample">
-                            <div class="doc-checkbox-container">
-                                <input type="checkbox" class="doc-checkbox" checked>
-                            </div>
-                            <div class="doc-icon">
-                                <span class="material-icons">picture_as_pdf</span>
-                            </div>
-                            <div class="doc-info">
-                                <div class="doc-title">REC-owl2-primer-20121211.pdf</div>
-                            </div>
-                        </div>
-                        <div class="document-item sample">
-                            <div class="doc-checkbox-container">
-                                <input type="checkbox" class="doc-checkbox" checked>
-                            </div>
-                            <div class="doc-icon">
-                                <span class="material-icons">picture_as_pdf</span>
-                            </div>
-                            <div class="doc-info">
-                                <div class="doc-title">ontology101.pdf</div>
-                            </div>
-                        </div>
+
                     {% endif %}
 
                 </div>
@@ -291,6 +253,7 @@
         <div class="footer-status">NotebookLM과 유사하게 구현된 웹 UI가 제공됩니다.</div>
     </div>
 
+    <script src="{{ url_for('static', filename='js/processing.js') }}"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

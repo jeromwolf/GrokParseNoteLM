@@ -1,25 +1,117 @@
 // GrokParseNoteLM 웹 인터페이스 JavaScript
 
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded - GrokParseNoteLM JS initialized');
+    
+    // URL 매개변수 확인
+    const urlParams = new URLSearchParams(window.location.search);
+    const loadDocs = urlParams.get('load_docs');
+    const lastDocId = sessionStorage.getItem('lastDocId');
+    
+    // 문서 목록 표시 여부 확인
+    if (loadDocs === 'true') {
+        console.log('Loading documents view');
+        // URL에 load_docs=true가 있으면 문서 목록을 표시하고 처리된 문서 표시
+        if (lastDocId) {
+            console.log('Loading last document:', lastDocId);
+            // 저장된 문서 ID가 있으면 해당 문서 표시
+            setTimeout(() => {
+                const docItem = document.querySelector(`.document-item[data-id="${lastDocId}"]`);
+                if (docItem) {
+                    docItem.click();
+                }
+            }, 500);
+        }
+    } else {
+        // 그렇지 않으면 초기화 화면 표시
+        initializeInterface();
+    }
+    // 모달 관련 요소
+    const addDocBtn = document.getElementById('add-doc-btn');
+    const uploadModal = document.getElementById('upload-modal');
+    const closeModalBtn = document.querySelector('.close-modal-btn');
+    const cancelBtn = document.querySelector('.cancel-btn');
+    const confirmUploadBtn = document.getElementById('confirm-upload-btn');
+    const modalFileInput = document.getElementById('modal-file-input');
+    const modalBrowseBtn = document.getElementById('modal-browse-btn');
+    const modalDropzone = document.getElementById('modal-dropzone');
+    
+    
+    // 업로드 모달 열기
+    if (addDocBtn) {
+        console.log("Add document button found");
+        addDocBtn.addEventListener('click', function() {
+            console.log("Add document button clicked");
+            uploadModal.classList.remove('hidden');
+        });
+    }
+    
+    // 업로드 모달 닫기
+    if (closeModalBtn) {
+        closeModalBtn.addEventListener('click', function() {
+            uploadModal.classList.add('hidden');
+        });
+    }
+    
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', function() {
+            uploadModal.classList.add('hidden');
+        });
+    }
+    
+    // 파일 선택 버튼 클릭
+    if (modalBrowseBtn && modalFileInput) {
+        modalBrowseBtn.addEventListener('click', function() {
+            modalFileInput.click();
+        });
+    }
+    
+    // 파일 선택 시 표시
+    if (modalFileInput) {
+        modalFileInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                const fileName = this.files[0].name;
+                modalDropzone.querySelector('p').textContent = `선택된 파일: ${fileName}`;
+                confirmUploadBtn.disabled = false;
+            }
+        });
+    }
+    
     // 파일 업로드 처리
-    const uploadForm = document.getElementById('upload-form');
-    if (uploadForm) {
-        uploadForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const fileInput = document.getElementById('file-input');
-            const file = fileInput.files[0];
-            
-            if (!file) {
-                showUploadStatus('파일을 선택해주세요.', 'error');
+    if (confirmUploadBtn) {
+        confirmUploadBtn.addEventListener('click', function() {
+            if (!modalFileInput.files.length) {
+                alert('파일을 선택해주세요.');
                 return;
             }
             
+            const file = modalFileInput.files[0];
             const formData = new FormData();
             formData.append('file', file);
             
+            // 자동 처리 옵션
+            const autoProcess = document.getElementById('auto-process');
+            if (autoProcess && autoProcess.checked) {
+                formData.append('auto_process', 'true');
+            }
+            
+            // 업로드 모달 숨기기
+            uploadModal.classList.add('hidden');
+            
+            // 진행 상태 모달 표시
+            const progressModal = document.getElementById('upload-progress-modal');
+            if (progressModal) {
+                progressModal.classList.remove('hidden');
+            }
+            
             // 업로드 상태 표시
-            showUploadStatus('업로드 중...', 'loading');
+            function showUploadStatus(message, status = 'info') {
+                const uploadStatus = document.getElementById('upload-status');
+                if (uploadStatus) {
+                    uploadStatus.textContent = message;
+                    uploadStatus.className = `upload-status ${status}`;
+                }
+            }
             
             // 서버에 업로드 요청
             fetch('/upload', {
@@ -28,160 +120,403 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .then(response => response.json())
             .then(data => {
+                if (progressModal) {
+                    progressModal.classList.add('hidden');
+                }
+                
                 if (data.success) {
-                    showUploadStatus(data.message, 'success');
+                    alert(data.message || '파일이 성공적으로 업로드되었습니다.');
                     
-                    // 문서 처리 상태 주기적으로 확인
+                    // 처리 작업 ID가 있으면 상태 확인 시작
                     if (data.task_id) {
-                        checkProcessingStatus(data.task_id);
+                        showUploadStatus('문서 처리 중... 잠시만 기다려주세요.', 'info');
+                        // 처리 완료 후 로드 될 URL 저장
+                        const redirectUrl = data.redirect_url || '/?load_docs=true';
+                        checkProcessingStatus(data.task_id, false, redirectUrl);
+                    } else {
+                        // 목록 새로고침 (문서 목록 표시 활성화)
+                        window.location.href = '/?load_docs=true';
                     }
                 } else {
-                    showUploadStatus(data.error, 'error');
+                    alert(`업로드 실패: ${data.error || '알 수 없는 오류'}`);
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                showUploadStatus('업로드 중 오류가 발생했습니다.', 'error');
-            });
-        });
-    }
-    
-    // 질의 처리
-    const queryBtn = document.getElementById('query-btn');
-    if (queryBtn) {
-        queryBtn.addEventListener('click', function() {
-            const queryInput = document.getElementById('query-input');
-            const queryText = queryInput.value.trim();
-            
-            if (!queryText) {
-                alert('질문을 입력해주세요.');
-                return;
-            }
-            
-            const responseContainer = document.querySelector('.response-container');
-            responseContainer.innerHTML = '<div class="loading-indicator">처리 중...</div>';
-            
-            // 문서 상세 페이지에서 질의인 경우
-            const docId = this.getAttribute('data-id');
-            const selectedDocs = Array.from(document.querySelectorAll('.doc-checkbox:checked')).map(el => el.getAttribute('data-id'));
-            
-            const requestData = {
-                query: queryText,
-                doc_id: docId,
-                doc_ids: selectedDocs
-            };
-            
-            // 서버에 질의 요청
-            fetch('/api/query', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ query: queryText })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.response) {
-                    responseContainer.innerHTML = `
-                        <div class="response-text">
-                            <div class="response-header">
-                                <h3>응답:</h3>
-                                <span class="model-info">모델: ${data.model || 'Unknown'}</span>
-                            </div>
-                            <div class="response-content">${data.response.replace(/\n/g, '<br>')}</div>
-                        </div>
-                    `;
-                } else {
-                    responseContainer.innerHTML = `<div class="error-message">${data.error || '질의 처리 중 오류가 발생했습니다.'}</div>`;
+                if (progressModal) {
+                    progressModal.classList.add('hidden');
                 }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                responseContainer.innerHTML = '<div class="error-message">질의 처리 중 오류가 발생했습니다.</div>';
+                alert('업로드 중 오류가 발생했습니다.');
             });
         });
     }
     
-    // 도구 액션 설정
-    function setupToolsActions() {
-        // 통합 마크다운 생성 버튼
-        domElements.generateCombinedBtn.addEventListener('click', function() {
-            this.disabled = true;
-            this.textContent = '생성 중...';
-            
-            fetch('/api/generate_combined', {
-                method: 'POST'
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('통합 마크다운이 생성되었습니다.');
-                    // 마크다운 다운로드 또는 표시 기능 추가 가능
-                } else {
-                    alert(data.error || '통합 마크다운 생성 중 오류가 발생했습니다.');
+    // 문서 삭제 버튼 이벤트 핸들러
+    const deleteButtons = document.querySelectorAll('.delete-btn');
+    if (deleteButtons.length > 0) {
+        deleteButtons.forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation(); // 문서 항목 클릭 이벤트 전파 방지
+                
+                const docId = this.getAttribute('data-id');
+                const docName = this.getAttribute('data-name');
+                
+                if (confirm(`"${docName}" 문서를 삭제하시겠습니까?`)) {
+                    fetch(`/api/document/${docId}`, {
+                        method: 'DELETE'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('문서가 삭제되었습니다.');
+                            window.location.reload();
+                        } else {
+                            alert(`삭제 실패: ${data.error || '알 수 없는 오류'}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('문서 삭제 중 오류가 발생했습니다.');
+                    });
+                }
+            });
+        });
+    }
+    
+    // 문서 항목 클릭 이벤트 (문서 선택 및 내용 표시)
+    const documentItems = document.querySelectorAll('.document-item');
+    if (documentItems.length > 0) {
+        documentItems.forEach(item => {
+            item.addEventListener('click', function() {
+                // 선택 상태 토글
+                documentItems.forEach(i => i.classList.remove('selected'));
+                this.classList.add('selected');
+                
+                const docId = this.getAttribute('data-id');
+                
+                // 처리된 문서 내용 로드 (OpenAI 분석 결과)
+                loadProcessedDocument(docId);
+            });
+        });
+    }
+    
+    // 인터페이스 초기화 함수
+    function initializeInterface() {
+        // 가운데 패널 초기화
+        const mainContent = document.querySelector('.document-content');
+        if (mainContent) {
+            mainContent.innerHTML = `
+                <div class="welcome-screen">
+                    <div class="welcome-icon">
+                        <span class="material-icons">psychology</span>
+                    </div>
+                    <h2>GrokParseNoteLM에 오신 것을 환영합니다</h2>
+                    <p>PDF와 텍스트 문서를 업로드하고 OpenAI GPT-4로 분석해보세요.</p>
+                    <p>왼쪽 사이드바의 + 버튼을 클릭하여 시작하세요.</p>
+                </div>
+            `;
+
+            // 환영 화면 스타일 추가
+            const style = document.createElement('style');
+            style.textContent = `
+                .welcome-screen {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100%;
+                    padding: 2rem;
+                    text-align: center;
+                    animation: fadeIn 0.8s ease-in-out;
                 }
                 
-                this.disabled = false;
-                this.textContent = '통합 마크다운 생성';
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('통합 마크다운 생성 중 오류가 발생했습니다.');
-                this.disabled = false;
-                this.textContent = '통합 마크다운 생성';
-            });
-        });
-    }
-    
-    // 탭 기능 (문서 상세 페이지)
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    if (tabBtns.length > 0) {
-        tabBtns.forEach(btn => {
-            btn.addEventListener('click', function() {
-                // 활성 탭 버튼 변경
-                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                this.classList.add('active');
+                .welcome-icon {
+                    font-size: 3rem;
+                    margin-bottom: 1.5rem;
+                    color: #0066cc;
+                    animation: pulse 2s infinite;
+                }
                 
-                // 탭 내용 변경
-                const tabId = this.getAttribute('data-tab');
-                document.querySelectorAll('.tab-content').forEach(content => {
-                    content.classList.add('hidden');
-                });
-                document.getElementById(`${tabId}-content`).classList.remove('hidden');
-            });
-        });
+                .welcome-icon .material-icons {
+                    font-size: 4rem;
+                }
+                
+                @keyframes pulse {
+                    0% { transform: scale(1); opacity: 1; }
+                    50% { transform: scale(1.1); opacity: 0.8; }
+                    100% { transform: scale(1); opacity: 1; }
+                }
+                
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(20px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
     }
     
-    // 헬퍼 함수: 업로드 상태 표시
-    function showUploadStatus(message, type) {
-        const statusDiv = document.getElementById('upload-status');
-        if (!statusDiv) return;
+    // OpenAI 모델로 처리된 문서 내용 로드
+    function loadProcessedDocument(docId) {
+        // 중앙 패널에 로딩 상태 표시
+        const mainContent = document.querySelector('.document-content');
+        if (mainContent) {
+            mainContent.innerHTML = '<div class="loading-indicator"><span class="material-icons spin">autorenew</span><span>OpenAI GPT-4 모델을 통해 문서를 처리하는 중...</span></div>';
+            
+            // 로딩 애니메이션 스타일 추가
+            const style = document.createElement('style');
+            style.textContent = `
+                .loading-indicator {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100%;
+                    color: #0066cc;
+                    font-size: 1.2rem;
+                    text-align: center;
+                    animation: fadeIn 0.5s ease-in-out;
+                }
+                
+                .loading-indicator .material-icons {
+                    font-size: 2.5rem;
+                    margin-bottom: 1rem;
+                }
+                
+                .spin {
+                    animation: spin 1.5s linear infinite;
+                }
+                
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
         
-        statusDiv.textContent = message;
-        statusDiv.className = `status-message ${type}`;
+        // 문서 데이터 요청
+        fetch(`/api/document/${docId}/processed`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to load processed document');
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log("Processed document data:", data);
+                
+                if (data.success && data.content) {
+                    // 문서 제목 업데이트
+                    const docTitle = document.querySelector('.document-title');
+                    if (docTitle && data.title) {
+                        docTitle.textContent = data.title;
+                    }
+                    
+                    // 마크다운 변환 및 내용 표시
+                    if (mainContent) {
+                        // 요약 및 분석 결과 표시
+                        let htmlContent = '<div class="processed-document">';
+                        
+                        // GPT-4 분석 헤더 추가
+                        htmlContent += `
+                            <div class="ai-analysis-header">
+                                <div class="ai-badge">
+                                    <span class="material-icons">psychology</span>
+                                    <span>OpenAI GPT-4 분석</span>
+                                </div>
+                                <div class="analysis-timestamp">처리 시간: ${new Date().toLocaleString()}</div>
+                            </div>`;
+                        
+                        // 요약 섹션 추가
+                        if (data.summary) {
+                            htmlContent += `
+                                <div class="document-section">
+                                    <h3>핵심 요약</h3>
+                                    <div class="summary-content">${data.summary.replace(/\n/g, '<br>')}</div>
+                                </div>`;
+                        }
+                        
+                        // 문서 내용 추가
+                        if (data.content) {
+                            htmlContent += `
+                                <div class="document-section">
+                                    <h3>문서 내용</h3>
+                                    <div class="content-text">${data.content.replace(/\n/g, '<br>')}</div>
+                                </div>`;
+                        }
+                        
+                        // 이미지 분석 결과 추가
+                        if (data.images && data.images.length > 0) {
+                            htmlContent += `
+                                <div class="document-section">
+                                    <h3>이미지 분석 (총 ${data.images.length}개)</h3>
+                                    <div class="image-gallery">`;
+                            
+                            data.images.forEach((image, index) => {
+                                htmlContent += `
+                                    <div class="image-item">
+                                        <div class="image-container">
+                                            <img src="/images/${image.filename}" alt="추출 이미지 ${index + 1}">
+                                        </div>
+                                        <div class="image-info">
+                                            <span class="image-number">Image ${index + 1}</span>
+                                            ${image.ocr_text ? `<div class="ocr-text">${image.ocr_text.replace(/\n/g, '<br>')}</div>` : ''}
+                                        </div>
+                                    </div>`;
+                            });
+                            
+                            htmlContent += `</div></div>`;
+                        }
+                        
+                        htmlContent += '</div>';
+                        mainContent.innerHTML = htmlContent;
+                        
+                        // GPT-4 분석 헤더에 대한 스타일 추가
+                        const style = document.createElement('style');
+                        style.textContent = `
+                            .ai-analysis-header {
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                                padding: 10px 15px;
+                                background-color: #f0f7ff;
+                                border-radius: 8px;
+                                margin-bottom: 20px;
+                                border-left: 4px solid #0066cc;
+                            }
+                            
+                            .ai-badge {
+                                display: flex;
+                                align-items: center;
+                                color: #0066cc;
+                                font-weight: bold;
+                            }
+                            
+                            .ai-badge .material-icons {
+                                margin-right: 8px;
+                            }
+                            
+                            .analysis-timestamp {
+                                color: #666;
+                                font-size: 0.85em;
+                            }
+                        `;
+                        document.head.appendChild(style);
+                    }
+                } else {
+                    console.log("Falling back to basic document view");
+                    // 처리된 결과가 없는 경우 기본 문서 내용 표시
+                    fetch(`/view/${docId}`)
+                        .then(response => response.text())
+                        .then(html => {
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(html, 'text/html');
+                            const content = doc.querySelector('.document-content');
+                            
+                            if (content && mainContent) {
+                                mainContent.innerHTML = content.innerHTML;
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error loading document:', error);
+                            if (mainContent) {
+                                mainContent.innerHTML = '<div class="error-message">문서 내용을 불러오는 중 오류가 발생했습니다.</div>';
+                            }
+                        });
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                if (mainContent) {
+                    mainContent.innerHTML = '<div class="error-message">처리된 문서를 불러오는 중 오류가 발생했습니다.</div>';
+                }
+            });
     }
     
-    // 헬퍼 함수: 처리 상태 확인
-    function checkProcessingStatus(taskId, shouldReload = false) {
+    // 처리 작업 상태 확인
+    function checkProcessingStatus(taskId, shouldReload = false, redirectUrl = null) {
         let checkCount = 0;
         const maxChecks = 60; // 최대 확인 횟수 (60회 = 약 3분)
+        
+        // 처리 중 UI 표시 (processing.js의 함수 사용)
+        if (!shouldReload && typeof window.showProcessingUI === 'function') {
+            window.showProcessingUI();
+        }
         
         function checkStatus() {
             fetch(`/api/task/${taskId}`)
                 .then(response => response.json())
                 .then(data => {
                     checkCount++;
+                    console.log(`Task status check ${checkCount}:`, data);
+                    
+                    // 진행률 계산 (checkCount를 이용한 임의 값)
+                    let percentage = Math.min(Math.round((checkCount / maxChecks) * 100), 95);
+                    
+                    // 단계 설정 (임의로 설정, 실제로는 서버에서 상태를 받는 것이 좋음)
+                    let step = 'extract';
+                    if (checkCount > 3) step = 'images';
+                    if (checkCount > 6) step = 'analyze';
+                    
+                    // UI 업데이트 (processing.js의 함수 사용)
+                    if (typeof window.updateProcessingStep === 'function') {
+                        window.updateProcessingStep(step, percentage);
+                    }
                     
                     if (data.status === 'completed') {
-                        if (shouldReload) {
-                            // 처리 완료 후 페이지 새로고침
-                            window.location.reload();
-                        } else {
-                            // 문서 목록 페이지일 경우 해당 문서 링크 표시
-                            showUploadStatus('처리 완료! 문서를 확인하세요.', 'success');
-                            // 목록 새로고침을 위한 딜레이 후 페이지 리로드
-                            setTimeout(() => window.location.reload(), 2000);
+                        // 처리 완료 시 문서 내용 가져오기
+                        if (typeof window.updateProcessingStep === 'function') {
+                            window.updateProcessingStep('complete', 100);
                         }
+                        
+                        // 지연 후 결과 표시 (애니메이션 효과를 위해)
+                        setTimeout(() => {
+                            const docId = data.doc_id;
+                            if (docId) {
+                                // 완료 후 문서 목록이 포함된 페이지로 이동
+                                if (redirectUrl) {
+                                    console.log('Redirecting to:', redirectUrl);
+                                    // 문서 정보 저장
+                                    sessionStorage.setItem('lastDocId', docId);
+                                    window.location.href = redirectUrl;
+                                    return; // 이후 코드 실행 방지
+                                }
+                                
+                                // 리다이렉트가 없을 경우 기존 방식으로 처리
+                                // 문서 내용 로드
+                                loadProcessedDocument(docId);
+                                
+                                // 문서 선택 상태 업데이트
+                                const documentItems = document.querySelectorAll('.document-item');
+                                documentItems.forEach(item => {
+                                    item.classList.remove('selected');
+                                    if (item.getAttribute('data-id') === docId) {
+                                        item.classList.add('selected');
+                                    }
+                                });
+                                
+                                // 상태 메시지 표시
+                                const statusDiv = document.querySelector('.footer-status');
+                                if (statusDiv) {
+                                    statusDiv.textContent = 'OpenAI GPT-4 모델을 통해 문서가 성공적으로 처리되었습니다.';
+                                    statusDiv.className = 'footer-status success';
+                                    
+                                    // 3초 후 상태 메시지 초기화
+                                    setTimeout(() => {
+                                        statusDiv.textContent = 'NotebookLM과 유사하게 구현된 웹 UI가 제공됩니다.';
+                                        statusDiv.className = 'footer-status';
+                                    }, 3000);
+                                }
+                            } else {
+                                // 문서 ID가 없는 경우
+                                if (redirectUrl) {
+                                    window.location.href = redirectUrl;
+                                } else {
+                                    window.location.reload();
+                                }
+                            }
+                        }, 1500);
                     } else if (data.status === 'failed') {
                         if (shouldReload) {
                             alert(`문서 처리 실패: ${data.error || '알 수 없는 오류'}`);
