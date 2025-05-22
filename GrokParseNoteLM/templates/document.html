@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ document.filename }} - GrokParseNoteLM</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>GrokParseNoteLM</h1>
+            <div class="nav-links">
+                <a href="/" class="back-btn">← 목록으로</a>
+            </div>
+        </header>
+
+        <section class="document-details">
+            <h2>{{ document.filename }}</h2>
+            <div class="document-meta">
+                <span class="doc-type {{ document.doc_type }}">{{ document.doc_type }}</span>
+                <span class="doc-status {{ 'processed' if document.processed else 'unprocessed' }}">
+                    {{ '처리됨' if document.processed else '미처리' }}
+                </span>
+                <span class="doc-id">ID: {{ document.doc_id }}</span>
+                {% if document.added_date %}
+                    <span class="doc-date">추가일: {{ document.added_date }}</span>
+                {% endif %}
+            </div>
+        </section>
+
+        {% if document.processed %}
+        <section class="document-content">
+            <div class="content-tabs">
+                <button class="tab-btn active" data-tab="markdown">마크다운</button>
+                <button class="tab-btn" data-tab="summary">요약</button>
+                <button class="tab-btn" data-tab="images">이미지</button>
+            </div>
+            
+            <div class="tab-content" id="markdown-content">
+                <div class="markdown-container">
+                    {% if document.content %}
+                        <div class="markdown-view">{{ document.content|safe }}</div>
+                    {% else %}
+                        <p class="no-content">내용이 없습니다.</p>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="tab-content hidden" id="summary-content">
+                <div class="summary-container">
+                    {% if document.summary %}
+                        <div class="summary-view">{{ document.summary|safe }}</div>
+                    {% else %}
+                        <p class="no-content">요약이 없습니다.</p>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="tab-content hidden" id="images-content">
+                <div class="images-container">
+                    {% if document.images %}
+                        <div class="image-grid">
+                            {% for image in document.images %}
+                                <div class="image-item">
+                                    <img src="/images/{{ image.filename }}" alt="{{ image.filename }}">
+                                    <div class="image-info">
+                                        <p class="image-name">{{ image.filename }}</p>
+                                        {% if image.ocr_text %}
+                                            <div class="ocr-text">
+                                                <h4>OCR 텍스트:</h4>
+                                                <p>{{ image.ocr_text }}</p>
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="no-content">추출된 이미지가 없습니다.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+        {% else %}
+        <section class="document-processing">
+            <div class="processing-status">
+                <p>이 문서는 아직 처리되지 않았습니다.</p>
+                <button id="process-btn" data-id="{{ document.doc_id }}">처리 시작</button>
+                <div id="processing-indicator" class="hidden">
+                    <div class="spinner"></div>
+                    <p>처리 중...</p>
+                </div>
+            </div>
+        </section>
+        {% endif %}
+
+        <section class="query-section">
+            <h2>문서 기반 질의하기</h2>
+            <div class="query-form">
+                <textarea id="query-input" placeholder="이 문서에 대해 질문하세요..."></textarea>
+                <button id="query-btn" data-id="{{ document.doc_id }}">질의하기</button>
+            </div>
+            <div id="query-result" class="query-result">
+                <div class="response-container"></div>
+            </div>
+        </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

@@ -11,7 +11,11 @@ from typing import List, Optional
 import time
 
 # 로깅 설정
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Image Analysis Server", description="FastAPI 및 Tesseract OCR을 사용한 이미지 분석 서버")
@@ -100,6 +104,7 @@ async def analyze_multiple_images(files: List[UploadFile] = File(...), lang: str
 
 @app.post("/analyze/ocr/from_path")
 async def analyze_image_from_path(image_path: str, lang: str = "eng"):
+    logger.debug(f"analyze_image_from_path 호출됨: 경로={image_path}, 언어={lang}")
     """
     서버 로컬 경로에 있는 이미지에서 텍스트를 추출합니다.
     
@@ -107,13 +112,21 @@ async def analyze_image_from_path(image_path: str, lang: str = "eng"):
     - lang: OCR 언어 (기본값: eng, 한국어: kor, 한국어+영어: kor+eng)
     """
     try:
+        logger.debug(f"이미지 경로 확인: {image_path}")
         if not os.path.exists(image_path):
+            logger.error(f"이미지 파일을 찾을 수 없음: {image_path}")
             raise HTTPException(status_code=404, detail=f"이미지를 찾을 수 없습니다: {image_path}")
         
         start_time = time.time()
         
         # 이미지 읽기
-        image = Image.open(image_path)
+        logger.debug(f"이미지 파일 열기 시도: {image_path}")
+        try:
+            image = Image.open(image_path)
+            logger.debug(f"이미지 크기: {image.size}, 모드: {image.mode}")
+        except Exception as img_err:
+            logger.error(f"이미지 열기 실패: {str(img_err)}")
+            raise
         
         # OCR 수행
         text = pytesseract.image_to_string(image, lang=lang)
@@ -182,4 +195,7 @@ async def analyze_directory(directory_path: str, lang: str = "eng", extensions: 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="0.0.0.0", port=5050, reload=True)
+    logger.info("이미지 분석 서버 시작 중...")
+    logger.info(f"Tesseract 버전: {pytesseract.get_tesseract_version()}")
+    logger.info(f"지원 언어: {', '.join(pytesseract.get_languages())}")
+    uvicorn.run("server:app", host="0.0.0.0", port=5050, reload=True, log_level="debug")

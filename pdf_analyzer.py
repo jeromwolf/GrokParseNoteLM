@@ -99,7 +99,6 @@ def analyze_pdf(
                 import glob
                 response_files = glob.glob(response_file)
                 if response_files:
-                    import json
                     with open(response_files[0], 'r', encoding='utf-8') as f:
                         response_data = json.load(f)
                     
