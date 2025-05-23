@@ -92,14 +92,21 @@ body {
 
 /* 사이드바 공통 스타일 */
 .sidebar {
-    height: calc(100vh - 64px);
+    height: 100%;
     overflow-y: auto;
-    background-color: #fff;
+    transition: all 0.3s ease;
+}
+
+.left-sidebar {
+    flex: 0 0 250px;
+}
+
+.right-sidebar {
+    flex: 0 0 350px;
 }
 
 /* 좌측 사이드바 */
 .left-sidebar {
-    width: 240px;
     border-right: 1px solid #e0e0e0;
     padding: 1rem 0;
 }
@@ -623,6 +630,12 @@ body {
     max-width: 500px;
     width: 90%;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    animation: modalFadeIn 0.3s ease-in-out;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .modal-header {
@@ -658,34 +671,39 @@ body {
     border-top: 1px solid #e0e0e0;
 }
 
-.primary-btn {
+.confirm-btn {
     background-color: #1a73e8;
     color: white;
     border: none;
     border-radius: 4px;
     padding: 0.5rem 1rem;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s;
     font-weight: 500;
 }
 
-.primary-btn:hover {
+.confirm-btn:hover {
     background-color: #174ea6;
 }
 
+.confirm-btn:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
 .cancel-btn {
-    background-color: transparent;
+    background-color: #f2f2f2;
     color: #5f6368;
     border: none;
     border-radius: 4px;
     padding: 0.5rem 1rem;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s;
     font-weight: 500;
 }
 
 .cancel-btn:hover {
-    background-color: rgba(95, 99, 104, 0.1);
+    background-color: #e6e6e6;
 }
 
 /* 유틸리티 클래스 */
@@ -701,6 +719,13 @@ body {
     text-align: center;
     margin-bottom: 1.5rem;
     background-color: #f8f9fa;
+    transition: all 0.3s ease;
+}
+
+.active-dropzone {
+    border-color: #1a73e8;
+    background-color: rgba(26, 115, 232, 0.05);
+    box-shadow: 0 0 10px rgba(26, 115, 232, 0.2);
 }
 
 .upload-icon {

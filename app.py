@@ -5,6 +5,7 @@ import json
 import uuid
 import time
 import threading
+from datetime import datetime
 from werkzeug.utils import secure_filename
 from pathlib import Path
 
@@ -160,61 +161,67 @@ def view_document(doc_id):
 @app.route('/api/query', methods=['POST'])
 def process_query():
     data = request.get_json()
-    query = data.get('query', '')
+    question = data.get('question', '')
     doc_id = data.get('doc_id')
     doc_ids = data.get('doc_ids', [])
     
-    if not query:
-        return jsonify({'error': '질문을 입력해주세요'}), 400
+    if not question:
+        return jsonify({'error': '질문을 입력해주세요', 'success': False}), 400
     
     try:
         # 특정 문서가 지정된 경우 (단일 문서)
         if doc_id:
             document = documents_manager.get_document(doc_id)
             if not document:
-                return jsonify({'error': '문서를 찾을 수 없습니다'}), 404
+                return jsonify({'error': '문서를 찾을 수 없습니다', 'success': False}), 404
             
             if not document.processed:
-                return jsonify({'error': '문서가 아직 처리되지 않았습니다'}), 400
+                return jsonify({'error': '문서가 아직 처리되지 않았습니다', 'success': False}), 400
             
             # 단일 문서 기반 질의
-            markdown_path = os.path.join(document.output_dir, "markdown_result.md")
-            if os.path.exists(markdown_path):
-                with open(markdown_path, 'r', encoding='utf-8') as f:
-                    context = f.read()
-                result = query_engine.query(query, context)
+            if document.processed_data.get("markdown"):
+                context = document.processed_data["markdown"]
+                result = query_engine.query(question, context)
             else:
-                return jsonify({'error': '문서 처리 결과를 찾을 수 없습니다'}), 404
+                return jsonify({'error': '문서 처리 결과를 찾을 수 없습니다', 'success': False}), 404
+        
         # 체크된 문서들이 있는 경우
         elif doc_ids and len(doc_ids) > 0:
-            # 체크된 문서들만 사용해서 질의
-            filtered_docs_manager = DocumentsManager(workspace_dir=app.config['WORKSPACE_DIR'], load_existing=False)
-            
-            # 체크된 문서들만 추가
+            # 선택된 문서 유효성 검사
+            valid_doc_ids = []
             for doc_id in doc_ids:
                 doc = documents_manager.get_document(doc_id)
                 if doc and doc.processed:
-                    filtered_docs_manager.documents[doc_id] = doc
+                    valid_doc_ids.append(doc_id)
             
-            if not filtered_docs_manager.documents:
-                return jsonify({'error': '선택된 처리된 문서가 없습니다'}), 400
-                
+            if not valid_doc_ids:
+                return jsonify({'error': '선택된 문서 중 처리된 문서가 없습니다', 'success': False}), 400
+            
             # 선택된 문서들만 기반으로 질의
-            result = query_engine.query_with_documents(query, filtered_docs_manager)
+            result = query_engine.query_with_documents(question, documents_manager, valid_doc_ids)
         else:
             # 모든 문서 기반 질의
-            result = query_engine.query_with_documents(query, documents_manager)
+            result = query_engine.query_with_documents(question, documents_manager)
         
-        if result['success']:
+        if result.get('success', False):
             return jsonify({
-                'response': result['answer'],
-                'model': result.get('model', 'Unknown')
+                'success': True,
+                'answer': result['answer'],
+                'model': result.get('model', 'Unknown'),
+                'documents': result.get('documents', [])
             })
         else:
-            return jsonify({'error': result.get('error', '질의 처리 중 오류가 발생했습니다')}), 500
+            return jsonify({
+                'success': False,
+                'error': result.get('error', '질의 처리 중 오류가 발생했습니다')
+            }), 500
             
     except Exception as e:
-        return jsonify({'error': f'질의 처리 중 오류 발생: {str(e)}'}), 500
+        print(f"질의 처리 중 오류: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'질의 처리 중 오류 발생: {str(e)}'
+        }), 500
 
 # 문서 처리 비동기 함수
 def process_document_async(doc_id, task_id):
@@ -326,6 +333,71 @@ def get_processed_document(doc_id):
         return jsonify({
             'success': False,
             'error': str(e)
+        }), 500
+
+# 메모/원본 추가 API
+@app.route('/api/save_memo', methods=['POST'])
+def save_memo():
+    try:
+        data = request.json
+        if not data or 'content' not in data or 'question' not in data:
+            return jsonify({
+                'success': False,
+                'error': '필수 데이터가 누락되었습니다.'
+            }), 400
+        
+        # 필수 정보 추출
+        content = data['content']
+        question = data['question']
+        source_doc_ids = data.get('source_doc_ids', [])
+        
+        # 메모 파일 생성
+        memo_filename = f"메모_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+        memo_path = os.path.join(app.config['UPLOAD_FOLDER'], memo_filename)
+        
+        with open(memo_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        # 문서 관리자에 메모 추가
+        doc_id = documents_manager.add_document(memo_path)
+        
+        # 메모 문서 처리 (즉시 처리하여 사용 가능하도록)
+        result = documents_manager.process_document(
+            doc_id,
+            model_type="openai",
+            parser="pymupdf",
+            language="ko"
+        )
+        
+        # 성공 응답 반환
+        return jsonify({
+            'success': True,
+            'doc_id': doc_id,
+            'filename': memo_filename,
+            'message': '메모/원본이 성공적으로 저장되었습니다.'
+        })
+    except Exception as e:
+        logger.error(f"메모 저장 중 오류: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'메모 저장 중 오류 발생: {str(e)}'
+        }), 500
+
+# 문서 목록 API
+@app.route('/api/documents', methods=['GET'])
+def get_documents():
+    try:
+        documents = documents_manager.get_all_documents()
+        doc_list = [doc.to_dict() for doc in documents]
+        
+        return jsonify({
+            'success': True,
+            'documents': doc_list
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'문서 목록 조회 중 오류 발생: {str(e)}'
         }), 500
 
 if __name__ == "__main__":

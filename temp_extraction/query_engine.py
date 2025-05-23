@@ -163,44 +163,23 @@ class QueryEngine:
                 "success": False
             }
     
-    def query_with_documents(self, question: str, documents_manager, doc_ids: List[str] = None) -> Dict[str, Any]:
+    def query_with_documents(self, question: str, documents_manager) -> Dict[str, Any]:
         """
         문서 관리자의 문서들을 사용하여 질의하기
         
         Args:
             question: 질문 내용
             documents_manager: DocumentsManager 인스턴스
-            doc_ids: 질의에 사용할 문서 ID 목록 (None인 경우 모든 처리된 문서 사용)
             
         Returns:
             질의 결과 딕셔너리
         """
         try:
-            # 선택된 문서 ID 확인
-            if doc_ids and not isinstance(doc_ids, list):
-                raise ValueError("doc_ids는 리스트 형태여야 합니다")
-                
-            # 통합 마크다운 생성 (선택된 문서만 포함)
-            combined_markdown = documents_manager.generate_combined_markdown(doc_ids)
-            
-            # 선택된 문서 정보 (디버깅용)
-            selected_docs = []
-            if doc_ids:
-                selected_docs = [doc.filename for doc_id, doc in documents_manager.documents.items() 
-                                if doc_id in doc_ids and doc.processed]
-            else:
-                selected_docs = [doc.filename for doc in documents_manager.documents.values() 
-                                if doc.processed]
-                
-            logger.info(f"질의에 사용된 문서: {', '.join(selected_docs)}")
+            # 통합 마크다운 생성
+            combined_markdown = documents_manager.generate_combined_markdown()
             
             # 질의 실행
-            result = self.query(question, combined_markdown)
-            
-            # 문서 목록 추가
-            result['documents'] = selected_docs
-            
-            return result
+            return self.query(question, combined_markdown)
             
         except Exception as e:
             error_msg = f"문서 기반 질의 중 오류 발생: {str(e)}"

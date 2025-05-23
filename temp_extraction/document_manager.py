@@ -453,26 +453,17 @@ class DocumentsManager:
                 }
         return results
 
-    def generate_combined_markdown(self, doc_ids: List[str] = None) -> str:
+    def generate_combined_markdown(self) -> str:
         """
-        처리된 문서들의 결과를 하나의 마크다운 파일로 통합
+        처리된 모든 문서의 결과를 하나의 마크다운 파일로 통합
         
-        Args:
-            doc_ids: 포함할 문서 ID 목록 (None인 경우 모든 처리된 문서 포함)
-            
         Returns:
             str: 마크다운 형식의 통합 결과
         """
         logger.info("통합 마크다운 파일 생성 시작")
         
-        # 처리된 문서 필터링
-        if doc_ids:
-            # 특정 문서 ID만 선택
-            processed_docs = [doc for doc in self.documents.values() 
-                            if doc.doc_id in doc_ids and doc.processed]
-        else:
-            # 모든 처리된 문서 선택
-            processed_docs = [doc for doc in self.documents.values() if doc.processed]
+        # 처리된 문서만 선택
+        processed_docs = [doc for doc in self.documents.values() if doc.processed]
         
         if not processed_docs:
             raise ValueError("처리된 문서가 없습니다. 먼저 문서를 처리해주세요.")
