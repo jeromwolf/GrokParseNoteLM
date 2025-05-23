@@ -2,6 +2,7 @@
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded - GrokParseNoteLM JS initialized');
+    console.log('DEBUG: Starting initialization sequence');
     
     // URL 매개변수 확인
     const urlParams = new URLSearchParams(window.location.search);
@@ -26,183 +27,85 @@ document.addEventListener('DOMContentLoaded', function() {
         // 그렇지 않으면 초기화 화면 표시
         initializeInterface();
     }
-    // 모달 관련 요소
-    const addDocBtn = document.getElementById('add-doc-btn');
-    const uploadModal = document.getElementById('upload-modal');
-    const closeModalBtn = document.querySelector('.close-modal-btn');
-    const cancelBtn = document.querySelector('.cancel-btn');
-    const confirmUploadBtn = document.getElementById('confirm-upload-btn');
-    const modalFileInput = document.getElementById('modal-file-input');
-    const modalBrowseBtn = document.getElementById('modal-browse-btn');
-    const modalDropzone = document.getElementById('modal-dropzone');
     
+    // 파일 업로드 관련 코드는 file-upload.js로 이동했습니다.
     
-    // 업로드 모달 열기
-    if (addDocBtn) {
-        console.log("Add document button found");
-        addDocBtn.addEventListener('click', function() {
-            console.log("Add document button clicked");
-            uploadModal.classList.remove('hidden');
-        });
-    }
-    
-    // 업로드 모달 닫기
-    if (closeModalBtn) {
-        closeModalBtn.addEventListener('click', function() {
-            uploadModal.classList.add('hidden');
-        });
-    }
-    
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', function() {
-            uploadModal.classList.add('hidden');
-        });
-    }
-    
-    // 파일 선택 버튼 클릭
-    if (modalBrowseBtn && modalFileInput) {
-        modalBrowseBtn.addEventListener('click', function() {
-            modalFileInput.click();
-        });
-    }
-    
-    // 파일 선택 시 표시
-    if (modalFileInput) {
-        modalFileInput.addEventListener('change', function() {
-            if (this.files.length > 0) {
-                const fileName = this.files[0].name;
-                modalDropzone.querySelector('p').textContent = `선택된 파일: ${fileName}`;
-                confirmUploadBtn.disabled = false;
-            }
-        });
-    }
-    
-    // 드래그 앤 드롭 기능 추가
-    if (modalDropzone) {
-        // 드래그 이벤트 핸들러
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            modalDropzone.addEventListener(eventName, preventDefaults, false);
-        });
+    // 파일 업로드 이벤트 리스너 (업로드 성공 후 처리)
+    document.addEventListener('fileUploaded', function(e) {
+        const data = e.detail;
         
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
+        if (data.success) {
+            // 알림 팝업 제거하고 풋터에 상태 표시
+            const statusMessage = document.querySelector('.status-message');
+            if (statusMessage) {
+                statusMessage.textContent = '파일이 성공적으로 업로드되었습니다.';
+                statusMessage.style.display = 'block';
+                statusMessage.style.color = '#4CAF50';
+                
+                // 3초 후 상태 메시지 숨기기
+                setTimeout(() => {
+                    statusMessage.style.display = 'none';
+                }, 3000);
+            }
+            
+            if (data.file_info) {
+                // 새로운 문서 추가
+                addDocumentToList(data.file_info);
+                
+                // 처리 완료 메시지 표시
+                if (data.auto_processed) {
+                    showToast('문서가 업로드되었으며 자동으로 처리되었습니다.');
+                } else {
+                    showToast('문서 업로드 완료');
+                }
+            }
+            
+            // 처리 작업 ID가 있으면 상태 확인 시작
+            if (data.task_id) {
+                showUploadStatus('문서 처리 중... 잠시만 기다려주세요.', 'info');
+                // 처리 완료 후 로드 될 URL 저장
+                const redirectUrl = data.redirect_url || '/?load_docs=true';
+                checkProcessingStatus(data.task_id, false, redirectUrl);
+            }
+        } else {
+            showToast('업로드 실패: ' + (data.message || '오류가 발생했습니다.'));
+        }
+    });
+    
+    // 토스트 메시지 표시 함수
+    function showToast(message, duration = 3000) {
+        // 기존 토스트 제거
+        const existingToast = document.querySelector('.toast-message');
+        if (existingToast) {
+            existingToast.remove();
         }
         
-        // 드래그 중 표시 스타일 변경
-        ['dragenter', 'dragover'].forEach(eventName => {
-            modalDropzone.addEventListener(eventName, function() {
-                modalDropzone.classList.add('active-dropzone');
-            }, false);
-        });
+        const toast = document.createElement('div');
+        toast.className = 'toast-message';
+        toast.textContent = message;
+        document.body.appendChild(toast);
         
-        // 드래그 떠날 때 스타일 변경
-        ['dragleave', 'drop'].forEach(eventName => {
-            modalDropzone.addEventListener(eventName, function() {
-                modalDropzone.classList.remove('active-dropzone');
-            }, false);
-        });
+        // 토스트 표시
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
         
-        // 파일 드롭 이벤트 처리
-        modalDropzone.addEventListener('drop', function(e) {
-            const dt = e.dataTransfer;
-            const files = dt.files;
-            
-            if (files.length > 0) {
-                // 파일 선택 입력창에 파일 설정
-                modalFileInput.files = files;
-                
-                // 파일 이름 표시
-                const fileName = files[0].name;
-                modalDropzone.querySelector('p').textContent = `선택된 파일: ${fileName}`;
-                confirmUploadBtn.disabled = false;
-            }
-        }, false);
+        // 지정된 시간 후 토스트 제거
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => {
+                toast.remove();
+            }, 300);
+        }, duration);
     }
     
-    // 파일 업로드 처리
-    if (confirmUploadBtn) {
-        confirmUploadBtn.addEventListener('click', function() {
-            if (!modalFileInput.files.length) {
-                alert('파일을 선택해주세요.');
-                return;
-            }
-            
-            const file = modalFileInput.files[0];
-            const formData = new FormData();
-            formData.append('file', file);
-            
-            // 자동 처리 옵션
-            const autoProcess = document.getElementById('auto-process');
-            if (autoProcess && autoProcess.checked) {
-                formData.append('auto_process', 'true');
-            }
-            
-            // 업로드 모달 숨기기
-            uploadModal.classList.add('hidden');
-            
-            // 진행 상태 모달 표시
-            const progressModal = document.getElementById('upload-progress-modal');
-            if (progressModal) {
-                progressModal.classList.remove('hidden');
-            }
-            
-            // 업로드 상태 표시
-            function showUploadStatus(message, status = 'info') {
-                const uploadStatus = document.getElementById('upload-status');
-                if (uploadStatus) {
-                    uploadStatus.textContent = message;
-                    uploadStatus.className = `upload-status ${status}`;
-                }
-            }
-            
-            // 서버에 업로드 요청
-            fetch('/upload', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (progressModal) {
-                    progressModal.classList.add('hidden');
-                }
-                
-                if (data.success) {
-                    // 알림 팝업 제거하고 풋터에 상태 표시
-                    const statusMessage = document.querySelector('.status-message');
-                    if (statusMessage) {
-                        statusMessage.textContent = '파일이 성공적으로 업로드되었습니다.';
-                        statusMessage.style.display = 'block';
-                        statusMessage.style.color = '#4CAF50';
-                        
-                        // 3초 후 상태 메시지 숨기기
-                        setTimeout(() => {
-                            statusMessage.style.display = 'none';
-                        }, 3000);
-                    }
-                    
-                    // 처리 작업 ID가 있으면 상태 확인 시작
-                    if (data.task_id) {
-                        showUploadStatus('문서 처리 중... 잠시만 기다려주세요.', 'info');
-                        // 처리 완료 후 로드 될 URL 저장
-                        const redirectUrl = data.redirect_url || '/?load_docs=true';
-                        checkProcessingStatus(data.task_id, false, redirectUrl);
-                    } else {
-                        // 목록 새로고침 (문서 목록 표시 활성화)
-                        window.location.href = '/?load_docs=true';
-                    }
-                } else {
-                    alert(`업로드 실패: ${data.error || '알 수 없는 오류'}`);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                if (progressModal) {
-                    progressModal.classList.add('hidden');
-                }
-                alert('업로드 중 오류가 발생했습니다.');
-            });
-        });
+    // 업로드 상태 표시 함수
+    function showUploadStatus(message, status = 'info') {
+        const uploadStatus = document.getElementById('upload-status');
+        if (uploadStatus) {
+            uploadStatus.textContent = message;
+            uploadStatus.className = `upload-status ${status}`;
+        }
     }
     
     // 문서 삭제 버튼 이벤트 핸들러

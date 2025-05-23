@@ -14,15 +14,18 @@
         <!-- 헤더 -->
         <header class="app-header">
             <div class="logo">
-                <h1>OWL 2 Web Ontology Language Overview</h1>
+                <h1>Untitled notebook</h1>
             </div>
             <div class="header-actions">
                 <button id="present-btn" class="icon-btn" title="데이터 포그리즈">
                     <span class="material-icons">present_to_all</span>
                 </button>
-                <button id="share-btn" class="icon-btn" title="공유하기">
-                    <span class="material-icons">share</span>
+                <!-- 기존 버튼 유지 -->
+                <button id="add-doc-btn" class="icon-btn add-btn" title="문서 추가" onclick="document.getElementById('upload-modal').classList.remove('hidden'); console.log('Add doc button clicked via inline handler');">
+                    <span class="material-icons">add</span>
                 </button>
+                <!-- 새로운 문서 추가 버튼 - 텍스트 버튼으로 추가 -->
+                <button id="new-add-doc-btn" class="primary-btn" style="margin-left: 8px;" onclick="document.getElementById('upload-modal').classList.remove('hidden'); console.log('New add doc button clicked');">문서 추가</button>
                 <button id="more-btn" class="icon-btn" title="추가 옵션">
                     <span class="material-icons">more_vert</span>
                 </button>
@@ -42,7 +45,7 @@
                 <div class="sidebar-header">
                     <h2>출처</h2>
                     <div class="sidebar-actions">
-                        <button id="add-doc-btn" class="icon-btn add-btn" title="문서 추가">
+                        <button id="sidebar-add-doc-btn" class="icon-btn add-btn" title="문서 추가" onclick="document.getElementById('upload-modal').classList.remove('hidden'); console.log('Sidebar add doc button clicked');">
                             <span class="material-icons">add</span>
                         </button>
                         <button id="search-btn" class="icon-btn search-btn" title="검색">
@@ -96,11 +99,13 @@
 
             <!-- 중앙 컨텐츠 영역 (문서 내용) -->
             <section class="main-content">
+                {% if documents and documents|selectattr('selected')|list %}
+                <!-- 문서가 선택된 경우 보여줄 내용 -->
                 <div class="document-view-header">
                     <div class="document-owl-container">
                         <img class="document-owl" src="https://cdn-icons-png.flaticon.com/512/6855/6855217.png" alt="문서 아이콘">
                     </div>
-                    <h1 class="document-title">OWL 2 Web Ontology Language Overview</h1>
+                    <h1 class="document-title">선택된 문서 제목</h1>
                     <div class="document-actions">
                         <button class="doc-action-btn" title="문서 복사">
                             <span class="material-icons">content_copy</span>
@@ -110,12 +115,18 @@
                 <div class="document-source">소스 보기</div>
                 
                 <div class="document-content">
-                    <p class="content-text">우리가 살고 있는 실세계에서 개념들, 개념 관계들, 그리고 관계의 논리적 특성들을 형식적으로 표현하기 위해 RDF(Resource Description Format)/OWL(Web Ontology Language) 2.0 등을 사용한다.</p>
-                    
-                    <p class="content-text">RDF 기반의 웹 온톨로지 언어 OWL(Web Ontology Language)은 지식 표현 언어이다. 웹에 존재하는 콘텐츠를 명시적으로 표현하기 위한 메커니즘을 제공한다. 이에 메타데이터 문서의 의미나 콘텐츠 그 자체는 물론 그 콘텐츠가 표현하는 세계의 사물들에 관한 지식까지 표현할 수 있다.</p>
-                    
-                    <p class="content-text">본 문서는 OWL 2에 대한 개략적인 내용을 기술하는 문서이다. 그리고 현존 온톨로지를 통합할 수 있는 방법을 기술하고 있다.</p>
+                    <p class="content-text">선택된 문서의 내용이 여기에 표시됩니다.</p>
                 </div>
+                {% else %}
+                <!-- 문서가 선택되지 않은 경우 (시작 화면) -->
+                <div class="empty-content-message">
+                    <div class="document-owl-container" style="margin-bottom: 40px;">
+                        <img class="document-owl" src="https://cdn-icons-png.flaticon.com/512/6855/6855217.png" alt="문서 아이콘">
+                    </div>
+                    <h2 style="margin-bottom: 20px;">문서를 선택하거나 추가하세요</h2>
+                    <p>왼쪽 사이드바에서 문서를 선택하거나 + 버튼을 클릭하여 새 문서를 추가하세요.</p>
+                </div>
+                {% endif %}
 
                 <div class="content-actions">
                     <div class="action-buttons content-action-buttons">
@@ -225,7 +236,7 @@
             </div>
         </div>
 
-        <!-- 파일 업로드 모달 -->
+        <!-- 파일 업로드 모달 - 완전히 새로운 방식 -->
         <div id="upload-modal" class="modal hidden">
             <div class="modal-content">
                 <div class="modal-header">
@@ -235,15 +246,17 @@
                     </button>
                 </div>
                 <div class="modal-body">
-                    <div class="upload-area modal-dropzone" id="modal-dropzone">
+                    <div class="upload-area" id="modal-dropzone">
                         <div class="upload-icon">
                             <span class="material-icons">cloud_upload</span>
                         </div>
                         <p>문서를 여기에 끌어다 놓거나</p>
-                        <form id="modal-upload-form" enctype="multipart/form-data">
-                            <input type="file" id="modal-file-input" name="file" accept=".pdf,.txt,.md" hidden>
-                            <button type="button" id="modal-browse-btn" class="primary-btn">파일 선택</button>
-                        </form>
+                        <div id="browse-options">
+                            <!-- 파일 선택 버튼을 div로 감싸서 이벤트 전파를 차단 -->
+                            <div id="browse-btn-wrapper">
+                                <button type="button" id="modal-browse-btn" class="primary-btn">파일 선택</button>
+                            </div>
+                        </div>
                     </div>
                     <div class="upload-options">
                         <div class="option-group">
@@ -254,11 +267,56 @@
                             </div>
                         </div>
                     </div>
+                    <!-- 은폐한 파일 입력 필드 컨테이너, 사용자 인터랙션 후에만 생성됨 -->
+                    <div id="hidden-file-controls" style="display: none; width: 0; height: 0; overflow: hidden;"></div>
                 </div>
                 <div class="modal-footer">
-                    <button class="cancel-btn">취소</button>
-                    <button class="confirm-btn" id="confirm-upload-btn">업로드</button>
+                    <button class="cancel-btn" onclick="document.getElementById('upload-modal').classList.add('hidden');">취소</button>
+                    <button class="confirm-btn" id="confirm-upload-btn" onclick="handleFileUpload()" disabled>업로드</button>
                 </div>
+                
+                <script>
+                    // 파일 업로드 처리 함수
+                    function handleFileUpload() {
+                        const fileInput = document.querySelector('#hidden-file-controls input[type="file"]');
+                        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                            alert('파일을 선택해주세요.');
+                            return;
+                        }
+                        
+                        const file = fileInput.files[0];
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        
+                        const autoProcess = document.getElementById('auto-process');
+                        if (autoProcess && autoProcess.checked) {
+                            formData.append('auto_process', 'true');
+                        }
+                        
+                        // 업로드 모달 숨기기
+                        document.getElementById('upload-modal').classList.add('hidden');
+                        
+                        // 서버에 업로드 요청 
+                        fetch('/upload', {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                alert('파일 업로드 성공!');
+                                // 페이지 새로고침
+                                window.location.reload();
+                            } else {
+                                alert('업로드 실패: ' + (data.message || '오류가 발생했습니다.'));
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Upload error:', error);
+                            alert('업로드 중 오류가 발생했습니다.');
+                        });
+                    }
+                </script>
             </div>
         </div>
         
@@ -266,8 +324,10 @@
     </div>
 
     <script src="{{ url_for('static', filename='js/processing.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script src="{{ url_for('static', filename='js/queryEngine.js') }}"></script>
     <script src="{{ url_for('static', filename='js/simpleDocumentClick.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/file-upload.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/upload-fix.js') }}"></script>
 </body>
 </html>
