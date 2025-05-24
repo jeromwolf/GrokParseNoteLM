@@ -2,6 +2,9 @@
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Query Engine JS loaded');
     
+    // 문서 목록 초기 로드
+    refreshDocumentList();
+    
     // 질문 입력 필드와 전송 버튼
     const questionInput = document.getElementById('question-input');
     const sendBtn = document.querySelector('.send-btn');
