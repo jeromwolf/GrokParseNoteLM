@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // DOM 요소
     const addDocBtn = document.getElementById('add-doc-btn');
+    const sidebarAddDocBtn = document.getElementById('sidebar-add-doc-btn'); // 사이드바 + 버튼 추가
     const uploadModal = document.getElementById('upload-modal');
     const modalBrowseBtn = document.getElementById('modal-browse-btn');
     const modalDropzone = document.getElementById('modal-dropzone');
@@ -44,30 +45,41 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // 모달 열기
-    if (addDocBtn) {
-        addDocBtn.addEventListener('click', function(e) {
-            console.log('Add document button clicked');
+    // 문서 추가 모달 열기 함수
+    function openUploadModal(e) {
+        console.log('Opening upload modal');
+        if (e) {
             e.preventDefault();
             e.stopPropagation();
-            
-            // 기존 파일 입력 제거
-            removeExistingFileInput();
-            
-            // 상태 초기화
-            if (modalDropzone && modalDropzone.querySelector('p')) {
-                modalDropzone.querySelector('p').textContent = '문서를 여기에 끌어다 놓거나';
-            }
-            fileSelected = false;
-            
-            // 업로드 버튼 비활성화
-            if (confirmUploadBtn) {
-                confirmUploadBtn.disabled = true;
-            }
-            
-            // 모달 표시
-            uploadModal.classList.remove('hidden');
-        });
+        }
+        
+        // 기존 파일 입력 제거
+        removeExistingFileInput();
+        
+        // 상태 초기화
+        if (modalDropzone && modalDropzone.querySelector('p')) {
+            modalDropzone.querySelector('p').textContent = '문서를 여기에 끌어다 놓거나';
+        }
+        fileSelected = false;
+        
+        // 업로드 버튼 비활성화
+        if (confirmUploadBtn) {
+            confirmUploadBtn.disabled = true;
+        }
+        
+        // 모달 표시
+        uploadModal.classList.remove('hidden');
+    }
+    
+    // 헤더 버튼 이벤트 등록
+    if (addDocBtn) {
+        addDocBtn.addEventListener('click', openUploadModal);
+    }
+    
+    // 사이드바 버튼 이벤트 등록
+    if (sidebarAddDocBtn) {
+        sidebarAddDocBtn.addEventListener('click', openUploadModal);
+        console.log('Sidebar add document button event registered');
     }
     
     // 모달 닫기
@@ -170,7 +182,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             // 업로드 요청 전송
-            fetch('/api/upload', {
+            fetch('/upload', {
                 method: 'POST',
                 body: formData
             })
