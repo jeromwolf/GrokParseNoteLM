@@ -1,4 +1,74 @@
 // 선택된 문서를 기반으로 질의하는 JS 기능
+// 알림 표시 함수
+function showNotification(message, type = 'info', duration = 3000) {
+    // 기존 알림 요소 제거
+    const existingNotifications = document.querySelectorAll('.notification');
+    existingNotifications.forEach(notification => {
+        notification.remove();
+    });
+    
+    // 새 알림 요소 생성
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 9999;
+        padding: 12px 20px;
+        background-color: ${type === 'success' ? '#4caf50' : type === 'error' ? '#f44336' : '#2196F3'};
+        color: white;
+        border-radius: 4px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        display: flex;
+        align-items: center;
+        transition: all 0.3s ease;
+        transform: translateX(120%);
+    `;
+    
+    // 아이콘 추가
+    const icon = document.createElement('span');
+    icon.className = 'material-icons';
+    icon.style.cssText = 'margin-right: 8px;';
+    icon.textContent = type === 'success' ? 'check_circle' : type === 'error' ? 'error' : 'info';
+    notification.appendChild(icon);
+    
+    // 메시지 추가
+    const messageElement = document.createElement('span');
+    messageElement.textContent = message;
+    notification.appendChild(messageElement);
+    
+    // 닫기 버튼 추가
+    const closeBtn = document.createElement('span');
+    closeBtn.className = 'material-icons';
+    closeBtn.textContent = 'close';
+    closeBtn.style.cssText = 'margin-left: 8px; cursor: pointer; font-size: 18px;';
+    closeBtn.addEventListener('click', () => {
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), 300);
+    });
+    notification.appendChild(closeBtn);
+    
+    // body에 추가
+    document.body.appendChild(notification);
+    
+    // 애니메이션 효과
+    setTimeout(() => {
+        notification.style.transform = 'translateX(0)';
+    }, 10);
+    
+    // 일정 시간 후 자동 삭제
+    if (duration > 0) {
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            notification.style.transform = 'translateX(120%)';
+            setTimeout(() => notification.remove(), 300);
+        }, duration);
+    }
+    
+    return notification;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Query Engine JS loaded');
     
@@ -258,16 +328,19 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Memo saved:', data);
             
             if (data.success) {
-                // 문서 목록 새로고침
-                refreshDocumentList(data.doc_id);
-                
                 // 버튼 상태 복원
                 if (saveMemoBtn) {
                     saveMemoBtn.disabled = false;
                     saveMemoBtn.innerHTML = '<span class="material-icons">note_add</span>';
                 }
                 
-                alert('메모/원본이 성공적으로 저장되었습니다.');
+                // 새로고침 대신 알림 표시
+                showNotification('메모/원본이 성공적으로 저장되었습니다.', 'success');
+                
+                // 3초 후 페이지 새로고침 (전체 페이지 새로고침)
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
             } else {
                 // 오류 표시
                 if (saveMemoBtn) {
@@ -290,8 +363,33 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    // 문서 파일명 정보 저장을 위한 전역 변수
+    window.originalDocumentNames = window.originalDocumentNames || {};
+    
+    // 문서 목록 새로고침
+    // 파일명 저장을 위한 전역 객체
+    window.originalFileNames = window.originalFileNames || {};
+    
     // 문서 목록 새로고침
     function refreshDocumentList(newDocId) {
+        // 클릭 후 다시 로드하지 않기
+        if (window.isDocumentClicked) {
+            console.log('문서 클릭 후 다시 로드하지 않음');
+            return;
+        }
+        
+        // 현재 선택된 문서 저장
+        if (!newDocId) {
+            const selectedDoc = document.querySelector('.document-item.selected');
+            if (selectedDoc) {
+                newDocId = selectedDoc.getAttribute('data-id');
+            }
+        }
+        
+        // 문서 목록 컨테이너 참조
+        const documentList = document.getElementById('document-list');
+        if (!documentList) return;
+        
         // 문서 목록을 다시 로드
         fetch('/api/documents')
             .then(response => response.json())
@@ -306,20 +404,100 @@ document.addEventListener('DOMContentLoaded', function() {
                     // 문서가 없는 경우 메시지 표시
                     if (!data.documents || data.documents.length === 0) {
                         documentList.innerHTML = `
-                            <div class="empty-documents-message">
-                                <span class="material-icons">info</span>
-                                <p>문서 목록이 비어 있습니다.</p>
-                                <p class="empty-hint">왼쪽 상단의 + 버튼을 클릭하여 새 문서를 추가하세요.</p>
+                            <div class="empty-documents-message" style="text-align:center; padding:30px; margin-top:20px; background-color:#f9f9f9; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                                <span class="material-icons" style="font-size:48px; color:#2196F3; margin-bottom:15px;">description</span>
+                                <h3 style="margin:0 0 10px 0; color:#333; font-size:18px; font-weight:500;">문서 목록이 비어 있습니다</h3>
+                                <p style="margin:0 0 20px 0; color:#666; font-size:14px;">처리할 문서를 추가하면 이 곳에 표시됩니다.</p>
+                                <div style="display:inline-flex; align-items:center; background-color:#e3f2fd; padding:8px 16px; border-radius:4px; color:#0d47a1; font-size:14px;">
+                                    <span class="material-icons" style="font-size:16px; margin-right:8px;">add</span>
+                                    <span>왼쪽 상단의 <strong>+</strong> 버튼을 클릭하여 새 문서를 추가하세요</span>
+                                </div>
                             </div>
                         `;
                         return;
                     }
                     
-                    // 문서 목록 생성
+                    // 문서 파일명 캐싱 (파일명 변경 방지)
+                    if (!window.documentFileNames) {
+                        window.documentFileNames = {};
+                    }
+                    
+                    // 문서 데이터 자체는 그대로 사용
                     data.documents.forEach(doc => {
+                        // 이미 캐싱된 파일명이 있으면 그것을 사용, 없으면 현재 파일명 저장
+                        if (!window.documentFileNames[doc.doc_id]) {
+                            window.documentFileNames[doc.doc_id] = doc.filename;
+                            console.log(`파일명 캐싱 추가: ${doc.doc_id} => ${doc.filename}`);
+                        }
+                    });
+                    
+                    // 가장 단순한 방법 - 이름과 형식 보존
+                    // 그냥 서버에서 가져온 데이터 사용
+                    const docList = data.documents || [];
+                    
+                    // 클릭 시 변경되지 않게 한 번만 그리기
+                    // 서버 유형(PDF/TEXT) 보존
+                    if (!window.documentListRendered) {
+                        window.documentListRendered = true;
+                        console.log('문서 목록 최초 렌더링 - 문서 수:', docList.length);
+                    } else {
+                        // 최초 렌더링 이후로는 중복 파일명 처리를 위해 클릭 이벤트만 바꿈
+                        console.log('초기화 완료, 파일명 변경 방지 모드');
+                        return; // 문서 목록 이미 그려져 있으면 이후로 다시 그리지 않음
+                    }
+                    
+                    // 문서 그룹화 - 파일명 기준
+                    const groupedDocuments = {};
+                    
+                    // 그룹화는 처음에만 실행
+                    docList.forEach(doc => {
+                        // 파일명에서 확장자를 제외한 기본 이름 추출
+                        const baseFileName = doc.filename.substring(0, doc.filename.lastIndexOf('.')) || doc.filename;
+                        
+                        if (!groupedDocuments[baseFileName]) {
+                            groupedDocuments[baseFileName] = [];
+                        }
+                        groupedDocuments[baseFileName].push(doc);
+                    });
+                    
+                    console.log('그룹화된 문서:', groupedDocuments);
+                    
+                    // 원본 파일명 저장
+                    data.documents.forEach(doc => {
+                        // 처음 보는 파일이면 이름 저장
+                        if (!window.originalDocumentNames[doc.doc_id]) {
+                            window.originalDocumentNames[doc.doc_id] = doc.filename;
+                            console.log(`원본 파일명 저장: ${doc.doc_id} => ${doc.filename}`);
+                        }
+                    });
+                    
+                    // 2. 그룹화된 문서 표시 - 중복 제거
+                    const uniqueDocs = {};
+                    
+                    // 같은 파일명을 가진 문서 중 하나만 선택
+                    data.documents.forEach(doc => {
+                        // 저장된 원본 파일명 사용
+                        const origFilename = window.originalDocumentNames[doc.doc_id] || doc.filename;
+                        const simpleKey = origFilename.toLowerCase();
+                        
+                        // 처리된 문서 우선 저장
+                        if (!uniqueDocs[simpleKey] || doc.processed) {
+                            uniqueDocs[simpleKey] = doc;
+                        }
+                    });
+                    
+                    // 중복이 제거된 문서만 표시
+                    Object.values(uniqueDocs).forEach(doc => {
+                        // 원본 파일명 사용
+                        const origFilename = window.originalDocumentNames[doc.doc_id] || doc.filename;
+                        
                         const docElement = document.createElement('div');
                         docElement.className = `document-item ${doc.doc_id === newDocId ? 'selected' : ''} ${doc.selected ? 'selected' : ''}`;
                         docElement.setAttribute('data-id', doc.doc_id);
+                        docElement.setAttribute('data-original-name', origFilename);
+                        
+                        // 문서 형식에 따른 아이콘 선택
+                        const docIcon = doc.doc_type === 'pdf' ? 'picture_as_pdf' : 'description';
                         
                         docElement.innerHTML = `
                             <div class="doc-checkbox-container">
@@ -327,11 +505,11 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                             <div class="doc-icon">
                                 <span class="material-icons">
-                                    ${doc.doc_type === 'pdf' ? 'picture_as_pdf' : 'description'}
+                                    ${docIcon}
                                 </span>
                             </div>
                             <div class="doc-info">
-                                <div class="doc-title">${doc.filename}</div>
+                                <div class="doc-title" title="파일명: ${doc.filename}" data-original-name="${doc.filename}">${doc.filename}</div>
                                 <div class="doc-meta">
                                     <span class="doc-type">${doc.doc_type.toUpperCase()}</span>
                                     <span class="doc-status ${doc.processed ? 'processed' : 'unprocessed'}">
@@ -357,9 +535,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         });
                     });
                     
-                    // 문서 선택 이벤트 추가
-                    document.querySelectorAll('.document-item').forEach(item => {
-                        item.addEventListener('click', function(e) {
+                    // 문서 선택 이벤트 추가 - 문서 목록 위에 이벤트 위임 방식 적용
+                    const docListContainer = document.getElementById('document-list');
+                    if (docListContainer) {
+                        // 기존 이벤트 제거 후 새로 이벤트 구성
+                        docListContainer.onclick = function(e) {
                             // 삭제 버튼 또는 체크박스 클릭은 무시
                             if (
                                 e.target.classList.contains('delete-btn') || 
@@ -368,10 +548,57 @@ document.addEventListener('DOMContentLoaded', function() {
                                 e.target.closest('.doc-checkbox-container')
                             ) return;
                             
-                            // 문서 선택 상태 토글
-                            this.classList.toggle('selected');
-                        });
-                    });
+                            // 클릭한 문서 아이템 찾기
+                            const docItem = e.target.closest('.document-item');
+                            if (!docItem) return;
+                            
+                            // 문서 ID 가져오기
+                            const docId = docItem.getAttribute('data-id');
+                            if (!docId) return;
+                            
+                            // 이전에 선택된 아이템이 있으면 선택 상태 제거
+                            document.querySelectorAll('.document-item.selected').forEach(selectedItem => {
+                                if (selectedItem !== docItem) {
+                                    selectedItem.classList.remove('selected');
+                                }
+                            });
+                            
+                            // 현재 아이템 선택
+                            docItem.classList.add('selected');
+                            
+                            // 클릭 후에는 목록이 다시 그려지지 않도록 플래그 설정
+                            window.isDocumentClicked = true;
+                            
+                            // 파일명 요소 찾기
+                            const titleElement = docItem.querySelector('.doc-title');
+                            const currentFilename = titleElement.textContent;
+                            
+                            // 파일명 고정: data-original-name 속성에서 원본 파일명 가져오기
+                            const originalName = titleElement.getAttribute('data-original-name') || currentFilename;
+                            
+                            // 파일명 강제 고정 - 별도 함수로 파일명 복원 코드 분리
+                            function maintainFilename() {
+                                // 파일명이 변경되었으면 원래 이름으로 복원
+                                if (titleElement.textContent !== originalName) {
+                                    console.log(`파일명 복원: ${titleElement.textContent} -> ${originalName}`);
+                                    titleElement.textContent = originalName;
+                                }
+                            }
+                            
+                            // 즉시 파일명 확인
+                            maintainFilename();
+                            
+                            // 일정 시간 후에도 파일명 확인 (비동기 변경 대응)
+                            setTimeout(maintainFilename, 100);
+                            setTimeout(maintainFilename, 500);
+                            
+                            console.log(`문서 선택: ${docId}, 파일명 고정: ${originalName}`);
+                            
+                            // 추가 이벤트 처리가 필요한 경우 여기에 추가
+                        };
+                        
+                        console.log('문서 목록 이벤트 처리기 설정 완료');
+                    }
                     
                     // 삭제 버튼 이벤트 추가
                     document.querySelectorAll('.delete-btn').forEach(btn => {

@@ -102,10 +102,10 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             e.stopPropagation();
             
-            if (!userInteracted) {
-                console.log('User has not interacted with the page yet');
-                return;
-            }
+            // if (!userInteracted) {
+            //     console.log('User has not interacted with the page yet');
+            //     return;
+            // }
             
             // 이전 파일 입력창 제거
             removeExistingFileInput();
@@ -195,6 +195,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 // 업로드 후 처리
                 const uploadEvent = new CustomEvent('fileUploaded', { detail: data });
                 document.dispatchEvent(uploadEvent);
+                
+                // 애니메이션 처리 함수 직접 호출
+                if (typeof window.startProcessingAnimation === 'function' && data.document) {
+                    const docId = data.document.id || data.document.doc_id;
+                    const fileName = data.document.filename || data.document.name;
+                    if (docId) {
+                        console.log('애니메이션 직접 호출', docId, fileName);
+                        window.startProcessingAnimation(docId, fileName);
+                    }
+                }
             })
             .catch(error => {
                 console.error('Upload error:', error);

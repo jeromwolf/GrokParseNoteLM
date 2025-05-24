@@ -170,10 +170,58 @@ class DocumentsManager:
         try:
             # 이미 동일한 경로의 문서가 있는지 확인
             path_obj = Path(path)
+            file_name = path_obj.name
+            base_name = None
+            
+            # 파일 이름에서 타임스탬프 부분 제외한 기본 이름 추출 (예: 파일명_20250525_123456.pdf -> 파일명.pdf)
+            # PDF 파일인 경우 (일반 문서 업로드)
+            if file_name.lower().endswith('.pdf'):
+                if '_' in file_name:
+                    name_parts = file_name.split('_')
+                    if len(name_parts) > 2 and name_parts[-2].isdigit() and len(name_parts[-2]) == 8:
+                        # 타임스탬프가 포함된 파일명인 경우 (예: 파일명_20250525_123456.pdf)
+                        base_name = '_'.join(name_parts[:-2]) + '.pdf'
+                    else:
+                        base_name = file_name
+                else:
+                    base_name = file_name
+            # 메모 파일인 경우 (메모 추가)
+            elif file_name.startswith('메모_') and (file_name.endswith('.md') or file_name.endswith('.txt')):
+                base_name = file_name
+            else:
+                base_name = file_name
+                
+            logger.info(f"파일 경로: {path}, 파일명: {file_name}, 기본명: {base_name}")
+            
+            # 1. 동일 경로 체크
             for doc in self.documents.values():
                 if Path(doc.path) == path_obj:
-                    logger.info(f"이미 추가된 문서입니다: {path}")
+                    logger.info(f"이미 추가된 문서입니다 (경로 동일): {path}")
                     return doc.doc_id
+            
+            # 2. 파일명 기반 중복 체크 (타임스탬프 제외한 기본 이름이 같은 경우)
+            if base_name:
+                for doc in self.documents.values():
+                    doc_file_name = Path(doc.path).name
+                    doc_base_name = None
+                    
+                    # 기존 문서의 기본 이름 추출
+                    if doc_file_name.lower().endswith('.pdf'):
+                        if '_' in doc_file_name:
+                            name_parts = doc_file_name.split('_')
+                            if len(name_parts) > 2 and name_parts[-2].isdigit() and len(name_parts[-2]) == 8:
+                                doc_base_name = '_'.join(name_parts[:-2]) + '.pdf'
+                            else:
+                                doc_base_name = doc_file_name
+                        else:
+                            doc_base_name = doc_file_name
+                    else:
+                        doc_base_name = doc_file_name
+                    
+                    # 기본 이름이 같고 같은 확장자인 경우 중복으로 처리
+                    if doc_base_name == base_name and doc_file_name.split('.')[-1] == file_name.split('.')[-1]:
+                        logger.info(f"이미 추가된 문서입니다 (파일명 동일): {path}, 기존 문서: {doc.path}")
+                        return doc.doc_id
             
             # 새 문서 추가
             doc = Document(path)
