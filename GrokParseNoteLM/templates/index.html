@@ -6,6 +6,7 @@
     <title>GrokParseNoteLM - 문서 기반 질의응답</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/query-component.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/processing-animation.css') }}">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
@@ -304,17 +305,392 @@
                         .then(response => response.json())
                         .then(data => {
                             if (data.success) {
-                                alert('파일 업로드 성공!');
-                                // 페이지 새로고침
-                                window.location.reload();
-                            } else {
-                                alert('업로드 실패: ' + (data.message || '오류가 발생했습니다.'));
-                            }
+                                console.log('파일 업로드 성공! 처리 시작:', data);
+                                
+                                // 문서 처리 애니메이션 시작 - 새로운 단순화된 함수 사용
+                                const docId = data.document?.id || data.document?.doc_id;
+                                const fileName = data.document?.filename || data.document?.name;
+                                
+                                if (docId) {
+                                    console.log('파일 업로드 성공 - 애니메이션 시작:', docId, fileName);
+                                    
+                                    // 새로운 단순화된 처리 애니메이션 함수 호출
+                                    if (typeof window.startSimpleProcessing === 'function') {
+                                        window.startSimpleProcessing(docId, fileName);
+                                        return; // 처리 완료 - 다음 코드 실행 중단
+                                    }
+                                    
+                                    // 물리적으로 이전 오버레이 제거
+                                    const existingOverlay = document.querySelector('.processing-overlay');
+                                    if (existingOverlay) {
+                                        existingOverlay.remove();
+                                    }
+                                    
+                                    // 전체 화면 오버레이 생성
+                                    const overlay = document.createElement('div');
+                                    overlay.className = 'processing-overlay';
+                                    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background-color:rgba(255,255,255,0.95); z-index:9999; display:flex; align-items:center; justify-content:center;';
+                                    
+                                    // 처리 컨테이너 생성
+                                    const processingContainer = document.createElement('div');
+                                    processingContainer.className = 'processing-container';
+                                    processingContainer.style.cssText = 'width:90%; max-width:600px; padding:20px; border-radius:8px; background-color:#f9f9f9; box-shadow:0 2px 10px rgba(0,0,0,0.1);';
+                                    
+                                    // 애니메이션 HTML 구성
+                                    processingContainer.innerHTML = `
+                                        <div style="display:flex; align-items:center; margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid #eee;">
+                                            <div style="width:40px; height:40px; border-radius:50%; background-color:#e8f4fe; display:flex; align-items:center; justify-content:center; margin-right:15px;">
+                                                <span class="material-icons" style="color:#2196f3; animation:spin 2s linear infinite;">autorenew</span>
+                                            </div>
+                                            <h2 style="font-size:18px; font-weight:600; color:#333; margin:0;">문서 처리 중</h2>
+                                        </div>
+                                        <div style="padding:10px; margin:15px 0; background-color:#f5f5f5; border-radius:4px; text-align:center;">
+                                            <strong>처리중인 파일:</strong> ${fileName || '문서'}
+                                        </div>
+                                        <div class="processing-steps" style="margin-top:20px;">
+                                            <div class="processing-step active" id="processing-step-upload" style="display:flex; padding:12px 0; position:relative; opacity:1;">
+                                                <div class="step-icon" style="width:40px; height:40px; border-radius:50%; background-color:#e8f4fe; display:flex; align-items:center; justify-content:center; margin-right:15px; position:relative; z-index:2;">
+                                                    <span class="material-icons" style="font-size:20px; color:#2196f3;">cloud_upload</span>
+                                                </div>
+                                                <div style="flex:1;">
+                                                    <div style="font-weight:600; margin-bottom:4px; color:#333;">문서 업로드</div>
+                                                    <div style="font-size:14px; color:#666;">서버에 문서를 업로드하는 중입니다</div>
+                                                </div>
+                                            </div>
+                                            <div class="processing-step" id="processing-step-extract" style="display:flex; padding:12px 0; position:relative; opacity:0.5;">
+                                                <div class="step-icon" style="width:40px; height:40px; border-radius:50%; background-color:#f5f5f5; display:flex; align-items:center; justify-content:center; margin-right:15px; position:relative; z-index:2;">
+                                                    <span class="material-icons" style="font-size:20px; color:#757575;">subject</span>
+                                                </div>
+                                                <div style="flex:1;">
+                                                    <div style="font-weight:600; margin-bottom:4px; color:#333;">텍스트 추출</div>
+                                                    <div style="font-size:14px; color:#666;">문서에서 텍스트를 추출하는 중입니다</div>
+                                                    <div style="height:8px; width:100%; background-color:#f5f5f5; border-radius:4px; overflow:hidden; margin-top:8px;">
+                                                        <div id="progress-extract" style="height:100%; background-color:#2196f3; width:0%; transition:width 0.3s ease;"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="processing-step" id="processing-step-image_analysis" style="display:flex; padding:12px 0; position:relative; opacity:0.5;">
+                                                <div class="step-icon" style="width:40px; height:40px; border-radius:50%; background-color:#f5f5f5; display:flex; align-items:center; justify-content:center; margin-right:15px; position:relative; z-index:2;">
+                                                    <span class="material-icons" style="font-size:20px; color:#757575;">image</span>
+                                                </div>
+                                                <div style="flex:1;">
+                                                    <div style="font-weight:600; margin-bottom:4px; color:#333;">이미지 분석</div>
+                                                    <div style="font-size:14px; color:#666;">문서 내 이미지를 분석하는 중입니다</div>
+                                                    <div style="height:8px; width:100%; background-color:#f5f5f5; border-radius:4px; overflow:hidden; margin-top:8px;">
+                                                        <div id="progress-image_analysis" style="height:100%; background-color:#2196f3; width:0%; transition:width 0.3s ease;"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="processing-step" id="processing-step-summarize" style="display:flex; padding:12px 0; position:relative; opacity:0.5;">
+                                                <div class="step-icon" style="width:40px; height:40px; border-radius:50%; background-color:#f5f5f5; display:flex; align-items:center; justify-content:center; margin-right:15px; position:relative; z-index:2;">
+                                                    <span class="material-icons" style="font-size:20px; color:#757575;">psychology</span>
+                                                </div>
+                                                <div style="flex:1;">
+                                                    <div style="font-weight:600; margin-bottom:4px; color:#333;">AI 요약 생성</div>
+                                                    <div style="font-size:14px; color:#666;">AI가 문서 내용을 분석하고 요약하는 중입니다</div>
+                                                    <div style="height:8px; width:100%; background-color:#f5f5f5; border-radius:4px; overflow:hidden; margin-top:8px;">
+                                                        <div id="progress-summarize" style="height:100%; background-color:#2196f3; width:0%; transition:width 0.3s ease;"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="processing-step" id="processing-step-complete" style="display:flex; padding:12px 0; position:relative; opacity:0.5;">
+                                                <div class="step-icon" style="width:40px; height:40px; border-radius:50%; background-color:#f5f5f5; display:flex; align-items:center; justify-content:center; margin-right:15px; position:relative; z-index:2;">
+                                                    <span class="material-icons" style="font-size:20px; color:#757575;">check_circle</span>
+                                                </div>
+                                                <div style="flex:1;">
+                                                    <div style="font-weight:600; margin-bottom:4px; color:#333;">처리 완료</div>
+                                                    <div style="font-size:14px; color:#666;">문서 처리가 완료되었습니다</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `;
+                                    
+                                    // 오버레이에 추가
+                                    overlay.appendChild(processingContainer);
+                                    document.body.appendChild(overlay);
+                                    
+                                    // 애니메이션 스타일 추가
+                                    const style = document.createElement('style');
+                                    style.textContent = `
+                                        @keyframes spin {
+                                            from { transform: rotate(0deg); }
+                                            to { transform: rotate(360deg); }
+                                        }
+                                    `;
+                                    document.head.appendChild(style);
+                                    
+                                    // 처리 진행 애니메이션 시작
+                                    setTimeout(() => {
+                                        console.log('처리 애니메이션 시작');
+                                        simulateDirectProcessing();
+                                    }, 500);
+                                }
+                                
+                                // 직접 처리 애니메이션 함수 정의
+                                function simulateDirectProcessing() {
+                                    console.log('직접 처리 애니메이션 시작 - 시간:', new Date().toLocaleTimeString());
+                                    
+                                    // 업로드 완료 표시
+                                    const uploadStep = document.getElementById('processing-step-upload');
+                                    if (uploadStep) {
+                                        uploadStep.style.opacity = '1';
+                                        uploadStep.querySelector('.step-icon').style.backgroundColor = '#e8f5e9';
+                                        uploadStep.querySelector('.material-icons').style.color = '#4caf50';
+                                    }
+                                    
+                                    // 텍스트 추출 단계 시작
+                                    setTimeout(() => {
+                                        const extractStep = document.getElementById('processing-step-extract');
+                                        if (extractStep) {
+                                            extractStep.style.opacity = '1';
+                                            extractStep.querySelector('.step-icon').style.backgroundColor = '#e8f4fe';
+                                            extractStep.querySelector('.material-icons').style.color = '#2196f3';
+                                            
+                                            // 진행률 애니메이션
+                                            const progressBar = document.getElementById('progress-extract');
+                                            let progress = 0;
+                                            const extractInterval = setInterval(() => {
+                                                progress += 5;
+                                                if (progressBar) progressBar.style.width = progress + '%';
+                                                
+                                                if (progress >= 100) {
+                                                    clearInterval(extractInterval);
+                                                    extractStep.querySelector('.step-icon').style.backgroundColor = '#e8f5e9';
+                                                    extractStep.querySelector('.material-icons').style.color = '#4caf50';
+                                                    
+                                                    // 이미지 분석 단계 시작
+                                                    const imageAnalysisStep = document.getElementById('processing-step-image_analysis');
+                                                    if (imageAnalysisStep) {
+                                                        imageAnalysisStep.style.opacity = '1';
+                                                        imageAnalysisStep.querySelector('.step-icon').style.backgroundColor = '#e8f4fe';
+                                                        imageAnalysisStep.querySelector('.material-icons').style.color = '#2196f3';
+                                                        
+                                                        // 이미지 분석 진행률
+                                                        const imageProgressBar = document.getElementById('progress-image_analysis');
+                                                        let imageProgress = 0;
+                                                        const imageInterval = setInterval(() => {
+                                                            imageProgress += 7;
+                                                            if (imageProgressBar) imageProgressBar.style.width = imageProgress + '%';
+                                                            
+                                                            if (imageProgress >= 100) {
+                                                                clearInterval(imageInterval);
+                                                                imageAnalysisStep.querySelector('.step-icon').style.backgroundColor = '#e8f5e9';
+                                                                imageAnalysisStep.querySelector('.material-icons').style.color = '#4caf50';
+                                                                
+                                                                // 요약 단계 시작
+                                                                const summarizeStep = document.getElementById('processing-step-summarize');
+                                                                if (summarizeStep) {
+                                                                    summarizeStep.style.opacity = '1';
+                                                                    summarizeStep.querySelector('.step-icon').style.backgroundColor = '#e8f4fe';
+                                                                    summarizeStep.querySelector('.material-icons').style.color = '#2196f3';
+                                                                    
+                                                                    // 요약 진행률
+                                                                    const summaryProgressBar = document.getElementById('progress-summarize');
+                                                                    let summaryProgress = 0;
+                                                                    const summaryInterval = setInterval(() => {
+                                                                        summaryProgress += 4;
+                                                                        if (summaryProgressBar) summaryProgressBar.style.width = summaryProgress + '%';
+                                                                        
+                                                                        if (summaryProgress >= 100) {
+                                                                            clearInterval(summaryInterval);
+                                                                            summarizeStep.querySelector('.step-icon').style.backgroundColor = '#e8f5e9';
+                                                                            summarizeStep.querySelector('.material-icons').style.color = '#4caf50';
+                                                                            
+                                                                            // 완료 단계
+                                                                            setTimeout(() => {
+                                                                                const completeStep = document.getElementById('processing-step-complete');
+                                                                                if (completeStep) {
+                                                                                    completeStep.style.opacity = '1';
+                                                                                    completeStep.querySelector('.step-icon').style.backgroundColor = '#e8f5e9';
+                                                                                    completeStep.querySelector('.material-icons').style.color = '#4caf50';
+                                                                                    
+                                                                                    // 완료 후 페이지 새로고침 또는 처리된 문서로 이동
+                                                                                    setTimeout(() => {
+                                                                                        window.location.reload();
+                                                                                    }, 2000);
+                                                                                }
+                                                                            }, 500);
+                                                                        }
+                                                                    }, 150);
+                                                                }
+                                                            }
+                                                        }, 120);
+                                                    }
+                                                }
+                                            }, 100);
+                                        }
+                                    }, 1000);                                    
+                                }
+
+                                const mainContent = document.querySelector('.main-content');
+                                    if (mainContent) {
+                                        // 기존 내용 지우기
+                                        mainContent.innerHTML = '';
+                                        
+                                        // 처리 애니메이션 UI 생성
+                                        const processingUI = document.createElement('div');
+                                        processingUI.className = 'processing-container';
+                                        processingUI.innerHTML = `
+                                            <div style="padding:10px;margin:15px 0;background-color:#f5f5f5;border-radius:4px;text-align:center;">
+                                                <strong>처리중인 파일:</strong> ${fileName || '문서'}
+                                            </div>
+                                            <div class="processing-steps">
+                                                <div class="processing-step active" id="processing-step-upload">
+                                                    <div class="step-icon"><span class="material-icons">cloud_upload</span></div>
+                                                    <div class="step-content">
+                                                        <div class="step-title">문서 업로드</div>
+                                                        <div class="step-description">서버에 문서를 업로드하는 중입니다</div>
+                                                    </div>
+                                                </div>
+                                                <div class="processing-step" id="processing-step-extract">
+                                                    <div class="step-icon"><span class="material-icons">subject</span></div>
+                                                    <div class="step-content">
+                                                        <div class="step-title">텍스트 추출</div>
+                                                        <div class="step-description">문서에서 텍스트를 추출하는 중입니다</div>
+                                                        <div class="progress-indicator"><div class="progress-bar" id="progress-extract" style="width:0%"></div></div>
+                                                    </div>
+                                                </div>
+                                                <div class="processing-step" id="processing-step-image_analysis">
+                                                    <div class="step-icon"><span class="material-icons">image</span></div>
+                                                    <div class="step-content">
+                                                        <div class="step-title">이미지 분석</div>
+                                                        <div class="step-description">문서 내 이미지를 분석하는 중입니다</div>
+                                                        <div class="progress-indicator"><div class="progress-bar" id="progress-image_analysis" style="width:0%"></div></div>
+                                                    </div>
+                                                </div>
+                                                <div class="processing-step" id="processing-step-summarize">
+                                                    <div class="step-icon"><span class="material-icons">psychology</span></div>
+                                                    <div class="step-content">
+                                                        <div class="step-title">AI 요약 생성</div>
+                                                        <div class="step-description">AI가 문서 내용을 분석하고 요약하는 중입니다</div>
+                                                        <div class="progress-indicator"><div class="progress-bar" id="progress-summarize" style="width:0%"></div></div>
+                                                    </div>
+                                                </div>
+                                                <div class="processing-step" id="processing-step-complete">
+                                                    <div class="step-icon"><span class="material-icons">check_circle</span></div>
+                                                    <div class="step-content">
+                                                        <div class="step-title">처리 완료</div>
+                                                        <div class="step-description">문서 처리가 완료되었습니다</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        `;
+                                        mainContent.appendChild(processingUI);
+                                        
+                                        // 처리 진행 애니메이션 시작
+                                        simulateDocumentProcessing();
+                                    } else {
+                                        console.error('중앙 컨텐츠 영역을 찾을 수 없습니다');
+                                        // 애니메이션 함수를 사용하여 처리 시도
+                                        if (typeof window.startProcessingAnimation === 'function') {
+                                            window.startProcessingAnimation(docId, fileName);
+                                        } else {
+                                            window.location.reload();
+                                        }
+                                    }
+                                } else {
+                                    // document ID가 없으면 페이지 새로고침
+                                    console.error('문서 ID를 찾을 수 없습니다');
+                                    window.location.reload();
+                                
+                            }  
                         })
                         .catch(error => {
                             console.error('Upload error:', error);
-                            alert('업로드 중 오류가 발생했습니다.');
+                            alert(error);
                         });
+                    }
+                    
+                    // 문서 처리 진행을 시뮬레이션하는 함수
+                    function simulateDocumentProcessing() {
+                        console.log('문서 처리 시뮬레이션 시작 - 시간:', new Date().toLocaleTimeString());
+                        console.log('DOM 상태 확인:', {
+                            body: document.body,
+                            appContainer: document.querySelector('.app-container'),
+                            appContent: document.querySelector('.app-content'),
+                            mainContent: document.querySelector('.main-content'),
+                            sectionMainContent: document.querySelector('section.main-content'),
+                            processingSteps: document.querySelectorAll('.processing-step')
+                        });
+                        
+                        // 업로드 단계 완료 표시 (이미 활성화되어 있음)
+                        const uploadStep = document.getElementById('processing-step-upload');
+                        if (uploadStep) {
+                            uploadStep.classList.add('completed');
+                        }
+                        
+                        // 텍스트 추출 단계 시작
+                        setTimeout(() => {
+                            const extractStep = document.getElementById('processing-step-extract');
+                            if (extractStep) {
+                                extractStep.classList.add('active');
+                                
+                                // 진행률 애니메이션
+                                const progressBar = document.getElementById('progress-extract');
+                                let progress = 0;
+                                const extractInterval = setInterval(() => {
+                                    progress += 5;
+                                    if (progressBar) progressBar.style.width = progress + '%';
+                                    
+                                    if (progress >= 100) {
+                                        clearInterval(extractInterval);
+                                        extractStep.classList.add('completed');
+                                        
+                                        // 이미지 분석 단계 시작
+                                        const imageAnalysisStep = document.getElementById('processing-step-image_analysis');
+                                        if (imageAnalysisStep) {
+                                            imageAnalysisStep.classList.add('active');
+                                            
+                                            // 이미지 분석 진행률
+                                            const imageProgressBar = document.getElementById('progress-image_analysis');
+                                            let imageProgress = 0;
+                                            const imageInterval = setInterval(() => {
+                                                imageProgress += 7;
+                                                if (imageProgressBar) imageProgressBar.style.width = imageProgress + '%';
+                                                
+                                                if (imageProgress >= 100) {
+                                                    clearInterval(imageInterval);
+                                                    imageAnalysisStep.classList.add('completed');
+                                                    
+                                                    // 요약 단계 시작
+                                                    const summarizeStep = document.getElementById('processing-step-summarize');
+                                                    if (summarizeStep) {
+                                                        summarizeStep.classList.add('active');
+                                                        
+                                                        // 요약 진행률
+                                                        const summaryProgressBar = document.getElementById('progress-summarize');
+                                                        let summaryProgress = 0;
+                                                        const summaryInterval = setInterval(() => {
+                                                            summaryProgress += 4;
+                                                            if (summaryProgressBar) summaryProgressBar.style.width = summaryProgress + '%';
+                                                            
+                                                            if (summaryProgress >= 100) {
+                                                                clearInterval(summaryInterval);
+                                                                summarizeStep.classList.add('completed');
+                                                                
+                                                                // 완료 단계
+                                                                setTimeout(() => {
+                                                                    const completeStep = document.getElementById('processing-step-complete');
+                                                                    if (completeStep) {
+                                                                        completeStep.classList.add('active');
+                                                                        completeStep.classList.add('completed');
+                                                                        
+                                                                        // 완료 후 페이지 새로고침 또는 처리된 문서로 이동
+                                                                        setTimeout(() => {
+                                                                            window.location.reload();
+                                                                        }, 2000);
+                                                                    }
+                                                                }, 500);
+                                                            }
+                                                        }, 150);
+                                                    }
+                                                }
+                                            }, 120);
+                                        }
+                                    }
+                                }, 100);
+                            }
+                        }, 1000);
                     }
                 </script>
             </div>
@@ -323,14 +699,13 @@
         <div class="footer-status">NotebookLM과 유사하게 구현된 웹 UI가 제공됩니다.</div>
     </div>
 
-    <script src="{{ url_for('static', filename='js/processing.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script src="{{ url_for('static', filename='js/queryEngine.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/simpleDocumentClick.js') }}"></script>
     <script src="{{ url_for('static', filename='js/directClick.js') }}"></script>
     <script src="{{ url_for('static', filename='js/simpleViewer.js') }}"></script>
-    
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/main_fix.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/simpleDocumentClick.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/processing-animation.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/simple-processing.js') }}"></script>
     <script src="{{ url_for('static', filename='js/upload-fix.js') }}"></script>
     <script src="{{ url_for('static', filename='js/file-upload.js') }}"></script>
 </body>
