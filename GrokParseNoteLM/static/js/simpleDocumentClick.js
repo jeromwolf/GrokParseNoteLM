@@ -3,14 +3,67 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('간단한 문서 선택 스크립트가 로드되었습니다.');
     
     // 문서 내용 로드 함수
-    function loadDocument(docId) {
-        console.log('문서 로드 시작:', docId);
+    function loadDocument(docId, isProcessed) {
+        console.log('문서 로드 시작:', docId, '처리 상태:', isProcessed ? '처리됨' : '미처리');
         
         // 문서 내용 영역
         const mainContent = document.querySelector('.document-content');
         if (!mainContent) {
             console.error('문서 내용을 표시할 영역을 찾을 수 없습니다.');
             return;
+        }
+        
+        // 미처리 문서인 경우 처리 시작
+        if (!isProcessed) {
+            console.log('미처리 문서 처리 시작:', docId);
+            
+            // 처리 애니메이션 표시
+            if (typeof window.showProcessingUI === 'function') {
+                window.showProcessingUI();
+            } else {
+                mainContent.innerHTML = `
+                    <div class="processing-container">
+                        <div class="processing-animation">
+                            <div class="brain-icon">
+                                <span class="material-icons">psychology</span>
+                            </div>
+                            <div class="processing-glow"></div>
+                        </div>
+                        <p class="processing-text">문서를 처리하고 있습니다...</p>
+                    </div>
+                `;
+            }
+            
+            // 처리 요청 API 호출
+            fetch(`/api/process/${docId}`, {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('처리 요청 결과:', data);
+                
+                if (data.success && data.task_id) {
+                    // 처리 상태 확인 함수 호출
+                    if (typeof window.checkProcessingStatus === 'function') {
+                        window.checkProcessingStatus(data.task_id, false, null);
+                    } else {
+                        console.error('checkProcessingStatus 함수를 찾을 수 없습니다.');
+                        // 5초 후 페이지 새로고침
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 5000);
+                    }
+                } else {
+                    // 오류 메시지 표시
+                    mainContent.innerHTML = `<div class="error-message">문서 처리 시작 오류: ${data.error || '알 수 없는 오류'}</div>`;
+                }
+            })
+            .catch(error => {
+                console.error('문서 처리 요청 오류:', error);
+                mainContent.innerHTML = `<div class="error-message">오류: ${error.message}</div>`;
+            });
+            
+            return; // 미처리 문서인 경우 여기서 함수 종료
         }
         
         // 로딩 표시
@@ -138,15 +191,32 @@ document.addEventListener('DOMContentLoaded', function() {
         // 문서 항목이 발견되면 처리
         if (documentItem) {
             const docId = documentItem.getAttribute('data-id');
-            console.log('문서 클릭됨:', docId);
+            // 문서 처리 상태 확인 (체크박스 또는 상태 클래스로 확인)
+            let isProcessed = false;
+            
+            // 1. 체크박스로 확인
+            const checkbox = documentItem.querySelector('.doc-checkbox');
+            if (checkbox) {
+                isProcessed = checkbox.checked;
+            }
+            
+            // 2. 상태 클래스로 확인 (체크박스가 없는 경우)
+            if (!checkbox) {
+                const statusElement = documentItem.querySelector('.doc-status');
+                if (statusElement) {
+                    isProcessed = statusElement.classList.contains('processed');
+                }
+            }
+            
+            console.log('문서 클릭됨:', docId, '처리 상태:', isProcessed ? '처리됨' : '미처리');
             
             // 선택 상태 변경
             const allItems = document.querySelectorAll('.document-item');
             allItems.forEach(i => i.classList.remove('selected'));
             documentItem.classList.add('selected');
             
-            // 문서 내용 로드
-            loadDocument(docId);
+            // 문서 내용 로드 (처리 상태 전달)
+            loadDocument(docId, isProcessed);
         }
     }
     
