@@ -34,27 +34,35 @@ document.addEventListener('DOMContentLoaded', function() {
                 `;
             }
             
-            // 처리 요청 API 호출
-            fetch(`/api/process/${docId}`, {
-                method: 'POST'
+            // 처리 요청 API 호출 - 서버에서 자동으로 처리 시작
+            console.log('미처리 문서의 처리된 내용 요청. 서버에서 자동으로 처리됨');
+            
+            // '/api/document/{docId}/processed' API는 미처리 문서인 경우 자동으로 처리를 시작함
+            fetch(`/api/document/${docId}/processed`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('문서 처리 요청 실패');
+                }
+                return response.json();
             })
-            .then(response => response.json())
             .then(data => {
-                console.log('처리 요청 결과:', data);
+                console.log('문서 요청 결과:', data);
                 
-                if (data.success && data.task_id) {
-                    // 처리 상태 확인 함수 호출
+                if (data.success) {
+                    // 처리가 완료된 경우 - 바로 표시
+                    displayProcessedDocument(data);
+                } else if (data.task_id) {
+                    // 처리가 진행 중인 경우 - 상태 확인
                     if (typeof window.checkProcessingStatus === 'function') {
                         window.checkProcessingStatus(data.task_id, false, null);
                     } else {
-                        console.error('checkProcessingStatus 함수를 찾을 수 없습니다.');
                         // 5초 후 페이지 새로고침
                         setTimeout(() => {
                             window.location.reload();
                         }, 5000);
                     }
                 } else {
-                    // 오류 메시지 표시
+                    // 오류 발생
                     mainContent.innerHTML = `<div class="error-message">문서 처리 시작 오류: ${data.error || '알 수 없는 오류'}</div>`;
                 }
             })
@@ -64,6 +72,67 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             
             return; // 미처리 문서인 경우 여기서 함수 종료
+        }
+        
+        // 잘리된 문서 표시 함수
+        function displayProcessedDocument(data) {
+            console.log('처리된 문서 표시:', data);
+            
+            // 문서 제목 업데이트
+            const docTitle = document.querySelector('.document-title');
+            if (docTitle && data.title) {
+                docTitle.textContent = data.title;
+            }
+            
+            // 문서 내용 생성
+            let htmlContent = '<div class="processed-document">';
+            
+            // 모델 정보 헤더
+            htmlContent += `
+                <div class="model-header">
+                    <span class="model-badge">
+                        <span class="material-icons">psychology</span>
+                        <span>${data.parser || '업스테이지 PDF 파서'} + ${data.model_type?.toUpperCase() || 'OPENAI'}${data.model_name ? ' - ' + data.model_name : ''}</span>
+                    </span>
+                </div>
+            `;
+            
+            // 요약 정보
+            if (data.summary) {
+                htmlContent += `
+                    <div class="summary-section">
+                        <h3>📝 요약</h3>
+                        <div class="summary-content">${data.summary.replace(/\n/g, '<br>')}</div>
+                    </div>
+                `;
+            }
+            
+            // 본문 내용
+            htmlContent += `<div class="document-text">${data.content.replace(/\n/g, '<br>')}</div>`;
+            
+            // 이미지 갤러리
+            if (data.images && data.images.length > 0) {
+                htmlContent += '<div class="image-gallery">';
+                data.images.forEach((img, index) => {
+                    htmlContent += `
+                        <div class="image-item">
+                            <div class="image-container">
+                                <img src="${img.path}" alt="Image ${index + 1}">
+                            </div>
+                            <div class="image-info">
+                                <span class="image-title">Image ${index + 1}</span>
+                                ${img.ocr_text ? `<div class="ocr-text">${img.ocr_text.replace(/\n/g, '<br>')}</div>` : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+                htmlContent += '</div>';
+            }
+            
+            htmlContent += '</div>'; // processed-document 닫기
+            
+            // 모든 내용을 한 번에 DOM에 추가
+            mainContent.innerHTML = htmlContent;
         }
         
         // 로딩 표시
